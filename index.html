@@ -1081,57 +1081,73 @@ async function bulkDelete() {
 function dragSort(e, el, container, onDone, prep) {
   if (e.button != null && e.button > 0) return;
   e.preventDefault();
-  const grip = e.currentTarget;
-  try { grip.setPointerCapture(e.pointerId); } catch {}
+  // Moving a row in the DOM would release a capture held by its own grip, so capture on <html>
+  // (never moves) and listen on window: pointer events keep arriving however fast you drag.
+  const pid = e.pointerId, root = document.documentElement;
+  try { root.setPointerCapture(pid); } catch {}
   dragActive = true;
   const undo = prep?.();
-  const sibs = () => [...container.children].filter((c) => c !== el && c.dataset.id);
-  const r0 = el.getBoundingClientRect();
+
+  // Measure once. During the drag everything is arithmetic on cached sizes (no layout reads => no lag).
+  const order = [...container.children].filter((c) => c.dataset.id);
+  const rects = order.map((r) => r.getBoundingClientRect());
+  const h = new Map(order.map((r, i) => [r, rects[i].height]));
+  const gap = order.length > 1 ? Math.max(0, rects[1].top - rects[0].bottom) : 0;
+  const startTop = rects[0].top + window.scrollY;           // page coordinates of the first row
+  const r0 = rects[order.indexOf(el)];
   const grab = Math.min(Math.max(e.clientY - r0.top, 0), r0.height);
-  let y = e.clientY;
+  const hEl = h.get(el);
+  let y = e.clientY, raf = 0;
   el.classList.add("dragging");
-  const place = () => {
-    el.style.transform = "";
-    const natural = el.getBoundingClientRect().top;
-    el.style.transform = `translateY(${y - grab - natural}px)`;
-  };
-  const reorderOnce = () => {
-    const r = el.getBoundingClientRect(), center = r.top + r.height / 2;
-    for (const sb of sibs()) {
-      const sr = sb.getBoundingClientRect(), mid = sr.top + sr.height / 2;
-      const sbAfter = !!(el.compareDocumentPosition(sb) & Node.DOCUMENT_POSITION_FOLLOWING);
-      if (sbAfter && center > mid) { sb.after(el); return true; }
-      if (!sbAfter && center < mid) { sb.before(el); return true; }
+  el.style.willChange = "transform";
+
+  const render1 = () => {
+    raf = 0;
+    const wantTop = y + window.scrollY - grab;               // where the dragged row should be (page coords)
+    const center = wantTop + hEl / 2;
+    // target slot = number of other rows whose midpoint is above the dragged row's center
+    const others = order.filter((r) => r !== el);
+    let pos = startTop, target = 0;
+    for (const o of others) {
+      if (pos + h.get(o) / 2 < center) target++;
+      pos += h.get(o) + gap;
     }
-    return false;
+    if (order.indexOf(el) !== target) {
+      order.splice(order.indexOf(el), 1);
+      order.splice(target, 0, el);
+      if (target >= others.length) others[others.length - 1].after(el); else others[target].before(el);
+    }
+    let natural = startTop;
+    for (const r of order) { if (r === el) break; natural += h.get(r) + gap; }
+    el.style.transform = `translateY(${wantTop - natural}px)`;
   };
-  const update = () => {
-    place();
-    for (let i = 0; i < 50 && reorderOnce(); i++) place();
-  };
-  update();
-  const move = (ev) => { y = ev.clientY; update(); };
+  const schedule = () => { if (!raf) raf = requestAnimationFrame(render1); };
+  render1();
+
+  const move = (ev) => { if (ev.pointerId !== pid) return; y = ev.clientY; schedule(); };
   const timer = setInterval(() => {            // auto-scroll near the edges
     if (y < 70) window.scrollBy(0, -14); else if (y > window.innerHeight - 70) window.scrollBy(0, 14); else return;
-    update();
+    schedule();
   }, 16);
   const finish = (save) => {
     clearInterval(timer);
-    grip.removeEventListener("pointermove", move);
-    grip.removeEventListener("pointerup", up);
-    grip.removeEventListener("pointercancel", cancel);
+    if (raf) cancelAnimationFrame(raf);
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", up);
+    window.removeEventListener("pointercancel", cancel);
+    try { root.releasePointerCapture(pid); } catch {}
     el.classList.remove("dragging");
-    el.style.transform = "";
-    const ids = [...container.children].filter((c) => c.dataset.id).map((c) => c.dataset.id);
+    el.style.transform = ""; el.style.willChange = "";
+    const ids = order.map((c) => c.dataset.id);
     undo?.();
     dragActive = false;
     pendingRender = false;
     if (save) Promise.resolve(onDone(ids)).finally(() => render()); else render();
   };
-  const up = () => finish(true), cancel = () => finish(false);
-  grip.addEventListener("pointermove", move);
-  grip.addEventListener("pointerup", up);
-  grip.addEventListener("pointercancel", cancel);
+  const up = (ev) => { if (ev.pointerId === pid) finish(true); }, cancel = (ev) => { if (ev.pointerId === pid) finish(false); };
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", up);
+  window.addEventListener("pointercancel", cancel);
 }
 
 // ---------- edit operations ----------
