@@ -32,6 +32,7 @@
   button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:10px;padding:8px 12px;cursor:pointer}
   button.primary{background:var(--accent);color:var(--accent-text);border-color:var(--accent)}
   button.link{border:none;background:none;color:var(--muted);padding:4px 8px}
+  #expandAll,#collapseAll{font-size:20px;line-height:1;padding:4px 6px}
   input,select{font:inherit;color:var(--text);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-width:0}
   input[type=text],input[type=email],input[type=password]{width:100%}
   .toolbar{margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
@@ -79,6 +80,18 @@
   form.newgroup{display:flex;gap:8px;margin:16px 0}
   form.newgroup input{flex:1}
   .hidden{display:none!important}
+  .importbtn{display:block;width:100%;margin:0 0 12px}
+  .imp{background:var(--card);border:1px solid var(--accent);border-radius:14px;margin:0 0 12px;padding:10px 0;overflow:hidden}
+  .imp h3{margin:0;padding:0 14px 8px;font-size:16px}
+  .imp .hint{padding:0 14px 8px;font-size:13px;color:var(--muted)}
+  .imp .pad{padding:6px 14px;display:flex;flex-direction:column;gap:6px}
+  .improw{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:6px 14px;border-top:1px solid var(--line)}
+  .improw .q{flex:0 0 5.5em;padding:8px}
+  .improw .t{flex:1 1 9em;padding:8px}
+  .improw select{flex:1 1 9em;padding:8px;font-size:13px}
+  .improw .st{font-size:12px;color:var(--muted);flex:none}
+  .improw .st.ok{color:var(--accent)}
+  .recipe-body a{color:var(--accent)}
   textarea{font:inherit;color:var(--text);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;width:100%;min-height:130px;resize:vertical}
   .recipe-body{padding:10px 14px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:6px}
   .recipe-body label{font-size:13px;color:var(--muted)}
@@ -158,6 +171,8 @@
     <div class="row">
       <h1>🛒 Handleliste</h1>
       <span class="status" id="status">kobler til…</span>
+      <button class="link" id="expandAll" aria-label="Åpne alle lister" title="Åpne alle">⊞</button>
+      <button class="link" id="collapseAll" aria-label="Lukk alle lister" title="Lukk alle">⊟</button>
       <button class="link" id="menuBtn" aria-label="Meny">⋯</button>
     </div>
     <div class="tabs" role="tablist">
@@ -228,6 +243,8 @@ const recipesCol = collection(db, "recipes");
 let items = [];
 let cats = [];          // [{id, name, order}] from Firestore
 let meals = [];         // [{id, day 0-6, name, ingredients[], planned}]
+const openRecipes = new Set();   // expanded dinners; cleared whenever you leave/enter the tab
+let importDraft = null;   // import panel state: {stage:'paste'|'preview', ...}
 let recipes = [];       // saved dinners: [{id, name, ingredients[], recipe}]
 let unsub = null, unsubCats = null, unsubMeals = null, unsubRecipes = null;
 let itemsLoaded = false, catsLoaded = false, pendingRender = false;
@@ -587,7 +604,7 @@ async function finishMeal(m) {
     const master = items.find((i) => !i.mealId && i.category === ing.category && i.text === ing.text);
     b.set(doc(itemsCol), {
       text: ing.text, category: null, mealCategory: ing.category, mealId: m.id, mealName: m.name, day: m.day,
-      needed: true, checked: false, order: master?.order ?? 0, addedBy: who, createdAt: serverTimestamp()
+      needed: true, checked: false, qty: ing.qty || "", order: master?.order ?? 0, addedBy: who, createdAt: serverTimestamp()
     });
   });
   // Save to the dinner database (unless a saved dinner with this name already exists)
@@ -664,14 +681,120 @@ async function addRecipe(name) {
   name = name.trim();
   if (!name) return;
   const ex = recipes.find((r) => normName(r.name) === normName(name));
-  if (ex) { openState["r:" + ex.id] = true; alert("Det finnes allerede en middag med det navnet."); render(); return; }
+  if (ex) { openRecipes.add(ex.id); alert("Det finnes allerede en middag med det navnet."); render(); return; }
   const ref = await addDoc(recipesCol, { name, ingredients: [], recipe: "", createdAt: serverTimestamp() });
-  openState["r:" + ref.id] = true;
-  localStorage.setItem("openCats", JSON.stringify(openState));
+  openRecipes.add(ref.id);
 }
 async function deleteRecipe(r) {
   if (!confirm(`Slette «${r.name}» fra middagsdatabasen? Varer i varelisten beholdes.`)) return;
   await deleteDoc(recipeRef(r.id));
+}
+
+// ---------- import (from hent_oppskrift.py) ----------
+function matchItem(text) {
+  const n = normName(text);
+  if (!n) return null;
+  const cands = items.filter((i) => !i.mealId && i.category);
+  const exact = cands.find((i) => normName(i.text) === n);
+  if (exact) return exact;
+  let best = null;
+  cands.forEach((i) => {
+    const x = normName(i.text);
+    if (x.length >= 4 && n.length >= 4 && (n.includes(x) || x.includes(n)) && (!best || x.length > normName(best.text).length)) best = i;
+  });
+  return best;
+}
+function parseImport(raw) {
+  let j;
+  try { j = JSON.parse(raw.trim()); } catch { throw new Error("Det du limte inn er ikke gyldig JSON. Kjør hent_oppskrift.py og lim inn hele resultatet."); }
+  if (j?.format !== "handleliste-oppskrift" || !Array.isArray(j.ingredients)) throw new Error("Dette ser ikke ut som en oppskrift fra hent_oppskrift.py.");
+  const names = groupNames();
+  const fallback = names.includes(localStorage.getItem("lastNewCat")) ? localStorage.getItem("lastNewCat") : names[0];
+  const ingredients = j.ingredients.map((x) => {
+    const text = String(x.text ?? x.raw ?? "").trim();
+    const m = matchItem(text);
+    return { qty: String(x.qty ?? ""), text: m ? m.text : text, category: m ? m.category : fallback };
+  }).filter((x) => x.text);
+  const meta = [j.servings, j.time].filter(Boolean).join(" · ");
+  const steps = (Array.isArray(j.steps) ? j.steps : []).map((t, i) => `${i + 1}. ${t}`).join("\n");
+  return { stage: "preview", name: String(j.name || ""), source: String(j.source || ""), steps: (meta ? meta + "\n\n" : "") + steps, ingredients };
+}
+async function saveImport() {
+  const d = importDraft;
+  const name = d.name.trim();
+  if (!name) { alert("Gi middagen et navn."); return; }
+  if (recipes.some((r) => normName(r.name) === normName(name)) && !confirm(`Det finnes allerede en middag som heter «${name}». Lagre likevel?`)) return;
+  const existing = (x) => items.find((i) => !i.mealId && i.category === x.category && normName(i.text) === normName(x.text));
+  const ings = d.ingredients.filter((x) => x.text.trim()).map((x) => ({ qty: x.qty.trim(), category: x.category, text: existing(x)?.text ?? x.text.trim() }));
+  const seen = new Set();
+  for (const x of ings) {                      // unknown ingredients become permanent items (not on the shopping list)
+    const k = x.category + "|" + normName(x.text);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    if (!existing(x)) await addItem(x.text, x.category, false);
+  }
+  const ref = await addDoc(recipesCol, { name, ingredients: ings, recipe: d.steps, source: d.source, createdAt: serverTimestamp() });
+  openRecipes.add(ref.id);
+  importDraft = null;
+  render();
+}
+function importPanel() {
+  const box = document.createElement("div");
+  box.className = "imp";
+  const d = importDraft;
+  if (d.stage === "paste") {
+    box.innerHTML = `<h3>📥 Importer oppskrift</h3>
+      <div class="hint">Kjør <code>python hent_oppskrift.py &lt;lenke&gt;</code> på maskinen. Resultatet kopieres til utklippstavlen. Lim det inn her.</div>
+      <div class="pad"><textarea placeholder="Lim inn her…" aria-label="Importdata"></textarea>
+      <div class="row"><button class="primary" type="button">Les inn</button><button type="button" class="link">Avbryt</button></div></div>`;
+    const ta = box.querySelector("textarea");
+    ta.value = d.raw;
+    ta.addEventListener("input", () => { d.raw = ta.value; });
+    const [go, cancel] = box.querySelectorAll("button");
+    go.addEventListener("click", () => { try { importDraft = parseImport(ta.value); render(); } catch (e) { alert(e.message); } });
+    cancel.addEventListener("click", () => { importDraft = null; render(); });
+    return box;
+  }
+  const names = groupNames();
+  box.innerHTML = `<h3>📥 Kontroller før lagring</h3>
+    <div class="hint">Rett det som er feil. Varer som ikke finnes fra før, opprettes i valgt kategori.</div>
+    <div class="pad"><input type="text" class="nm" aria-label="Navn på middag"></div>`;
+  const nm = box.querySelector(".nm");
+  nm.value = d.name;
+  nm.addEventListener("input", () => { d.name = nm.value; });
+  d.ingredients.forEach((x, idx) => {
+    const row = document.createElement("div");
+    row.className = "improw";
+    row.innerHTML = `<input class="q" type="text" placeholder="antall" aria-label="Antall"><input class="t" type="text" aria-label="Vare">
+      <select aria-label="Kategori">${names.map((n) => `<option ${n === x.category ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>
+      <span class="st"></span><button class="ico" type="button" aria-label="Fjern">🗑</button>`;
+    const [q, t] = row.querySelectorAll("input"), sel = row.querySelector("select"), st = row.querySelector(".st");
+    q.value = x.qty; t.value = x.text;
+    const status = () => {
+      const ex = items.some((i) => !i.mealId && i.category === x.category && normName(i.text) === normName(x.text));
+      st.textContent = ex ? "✓ finnes" : "ny";
+      st.className = "st" + (ex ? " ok" : "");
+    };
+    status();
+    q.addEventListener("input", () => { x.qty = q.value; });
+    t.addEventListener("input", () => { x.text = t.value; status(); });
+    t.addEventListener("change", () => { const m = matchItem(x.text); if (m) { x.text = m.text; x.category = m.category; render(); } });
+    sel.addEventListener("change", () => { x.category = sel.value; status(); });
+    row.querySelector("button").addEventListener("click", () => { d.ingredients.splice(idx, 1); render(); });
+    box.appendChild(row);
+  });
+  const rest = document.createElement("div");
+  rest.className = "pad";
+  rest.innerHTML = `<label class="hint" style="padding:0">Oppskrift</label><textarea aria-label="Oppskrift"></textarea>
+    <div class="row"><button class="primary" type="button">Lagre middag</button><button type="button" class="link">Avbryt</button></div>`;
+  const ta = rest.querySelector("textarea");
+  ta.value = d.steps;
+  ta.addEventListener("input", () => { d.steps = ta.value; });
+  const [save, cancel] = rest.querySelectorAll("button");
+  save.addEventListener("click", saveImport);
+  cancel.addEventListener("click", () => { importDraft = null; render(); });
+  box.appendChild(rest);
+  return box;
 }
 
 function renderRecipes() {
@@ -684,6 +807,13 @@ function renderRecipes() {
   nf.innerHTML = `<input type="text" placeholder="Ny middag…" autocomplete="off"><button class="primary" type="submit">+</button>`;
   nf.addEventListener("submit", (e) => { e.preventDefault(); const inp = nf.querySelector("input"); addRecipe(inp.value); inp.value = ""; });
   root.appendChild(nf);
+  if (importDraft) root.appendChild(importPanel());
+  else {
+    const ib = document.createElement("button");
+    ib.type = "button"; ib.className = "importbtn"; ib.textContent = "📥 Importer oppskrift (fra hent_oppskrift.py)";
+    ib.addEventListener("click", () => { importDraft = { stage: "paste", raw: "" }; render(); });
+    root.appendChild(ib);
+  }
 
   let list = recipes.slice().sort((a, b) => a.name.localeCompare(b.name, "nb"));
   if (q) list = list.filter((r) => r.name.toLocaleLowerCase("nb").includes(q) || normIng(r.ingredients).some((x) => x.text.toLocaleLowerCase("nb").includes(q)));
@@ -698,28 +828,25 @@ function renderRecipes() {
   list.forEach((r) => {
     const ing = normIng(r.ingredients);
     const d = document.createElement("details");
-    const key = "r:" + r.id;
-    d.open = q ? true : (openState[key] ?? false);
-    d.addEventListener("toggle", () => { if (q) return; openState[key] = d.open; localStorage.setItem("openCats", JSON.stringify(openState)); });
+    d.open = q ? true : openRecipes.has(r.id);
+    d.addEventListener("toggle", () => { if (q) return; d.open ? openRecipes.add(r.id) : openRecipes.delete(r.id); });
     const sum = document.createElement("summary");
-    sum.innerHTML = `${esc(r.name)}<span class="count">${ing.length} varer${r.recipe?.trim() ? " · 📖" : ""}</span>`;
-    d.appendChild(sum);
-
-    const nm = document.createElement("div");
-    nm.className = "meal-name";
-    nm.innerHTML = `<input type="text" value="${esc(r.name)}" aria-label="Navn på middag" autocomplete="off"><button class="ico" type="button" aria-label="Slett middag">🗑</button>`;
-    nm.querySelector("input").addEventListener("change", (e) => {
-      const t = e.target.value.trim();
-      if (t && t !== r.name) updateDoc(recipeRef(r.id), { name: t }); else e.target.value = r.name;
+    sum.innerHTML = `<input type="text" class="gname" value="${esc(r.name)}" aria-label="Navn på middag" autocomplete="off"><span class="count">${ing.length} varer${r.recipe?.trim() ? " · 📖" : ""}</span><button class="ico" type="button" aria-label="Slett middag">🗑</button>`;
+    const nameInp = sum.querySelector("input");
+    nameInp.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); });
+    for (const ev of ["keydown", "keyup"]) nameInp.addEventListener(ev, (e) => e.stopPropagation());
+    nameInp.addEventListener("change", () => {
+      const t = nameInp.value.trim();
+      if (t && t !== r.name) updateDoc(recipeRef(r.id), { name: t }); else nameInp.value = r.name;
     });
-    nm.querySelector("button").addEventListener("click", () => deleteRecipe(r));
-    d.appendChild(nm);
+    sum.querySelector("button").addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); deleteRecipe(r); });
+    d.appendChild(sum);
 
     const save = (list2) => updateDoc(recipeRef(r.id), { ingredients: list2 });
     const ul = document.createElement("ul");
     ing.forEach((x, idx) => {
       const li = document.createElement("li");
-      li.innerHTML = `<span class="txt">${esc(x.text)}<span class="sub">${esc(x.category)}</span></span><button class="x" aria-label="Fjern">🗑</button>`;
+      li.innerHTML = `<span class="txt">${esc(x.text)}<span class="sub">${x.qty ? esc(x.qty) + " · " : ""}${esc(x.category)}</span></span><button class="x" aria-label="Fjern">🗑</button>`;
       li.querySelector(".x").addEventListener("click", () => save(ing.filter((_, k) => k !== idx)));
       ul.appendChild(li);
     });
@@ -732,6 +859,11 @@ function renderRecipes() {
     const ta = body.querySelector("textarea");
     ta.value = r.recipe || "";
     ta.addEventListener("change", () => updateDoc(recipeRef(r.id), { recipe: ta.value }));
+    if (/^https?:\/\//.test(r.source || "")) {
+      const a = document.createElement("a");
+      a.href = r.source; a.target = "_blank"; a.rel = "noopener noreferrer"; a.textContent = "🔗 Åpne original";
+      body.appendChild(a);
+    }
     d.appendChild(body);
 
     const pr = document.createElement("div");
@@ -781,7 +913,7 @@ function renderMeals() {
       const ul = document.createElement("ul");
       ing.forEach((x, idx) => {
         const li = document.createElement("li");
-        li.innerHTML = `<span class="txt">${esc(x.text)}<span class="sub">${esc(x.category)}</span></span>` + (m.planned ? "" : `<button class="x" aria-label="Fjern">🗑</button>`);
+        li.innerHTML = `<span class="txt">${esc(x.text)}<span class="sub">${x.qty ? esc(x.qty) + " · " : ""}${esc(x.category)}</span></span>` + (m.planned ? "" : `<button class="x" aria-label="Fjern">🗑</button>`);
         if (!m.planned) li.querySelector(".x").addEventListener("click", () => setIngredients(m, ing.filter((_, k) => k !== idx)));
         ul.appendChild(li);
       });
@@ -792,6 +924,12 @@ function renderMeals() {
         const rd = document.createElement("details");
         rd.className = "inner";
         rd.innerHTML = `<summary>📖 Oppskrift</summary><div class="recipe-view">${esc(rec.recipe)}</div>`;
+        if (/^https?:\/\//.test(rec.source || "")) {
+          const a = document.createElement("a");
+          a.href = rec.source; a.target = "_blank"; a.rel = "noopener noreferrer"; a.textContent = "🔗 Åpne original";
+          a.style.cssText = "display:block;padding:0 14px 10px;color:var(--accent)";
+          rd.appendChild(a);
+        }
         d.appendChild(rd);
       }
       const act = document.createElement("div");
@@ -949,9 +1087,12 @@ $("quickForm").addEventListener("submit", (e) => {
   addItem($("quickText").value, $("quickCat").value);
   $("quickText").value = "";
 });
+const setAllOpen = (open) => document.querySelectorAll("#list details").forEach((d) => { d.open = open; });
+$("expandAll").addEventListener("click", () => setAllOpen(true));
+$("collapseAll").addEventListener("click", () => setAllOpen(false));
 $("menuBtn").addEventListener("click", () => $("menu").classList.toggle("hidden"));
 $("hideDone").addEventListener("change", () => { localStorage.setItem("hideDone", $("hideDone").checked ? "1" : "0"); render(); });
-const setMode = (m) => { mode = m; localStorage.setItem("mode", m); window.scrollTo(0, 0); render(); };
+const setMode = (m) => { openRecipes.clear(); mode = m; localStorage.setItem("mode", m); window.scrollTo(0, 0); render(); };
 $("tabPlan").addEventListener("click", () => setMode("plan"));
 $("tabShop").addEventListener("click", () => setMode("shop"));
 $("tabEdit").addEventListener("click", () => setMode("edit"));
