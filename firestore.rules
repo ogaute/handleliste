@@ -12,5 +12,9 @@ service cloud.firestore {
     match /items/{id} {
       allow read, write: if allowed();
     }
+    // Group names + their order (used by the "Rediger" view)
+    match /categories/{id} {
+      allow read, write: if allowed();
+    }
   }
 }
