@@ -71,7 +71,7 @@
   summary input.gname:focus{background:var(--card);border-color:var(--line)}
   summary .count + .ico{margin-left:4px}
   li.edit{flex-wrap:wrap;gap:6px}
-  li.edit input.t{flex:1 1 calc(100% - 36px);min-width:0;padding:10px 12px;font-size:16px;font-weight:400}
+  li.edit input.t{flex:1 1 calc(100% - 90px);min-width:0;padding:10px 12px;font-size:16px;font-weight:400}
   li.edit select{flex:1 1 0;min-width:0;padding:6px 8px;font-size:13px;color:var(--muted);background:transparent}
   li.edit .ico{flex:none;padding:10px 14px}
   li.edit{padding:12px 14px}
@@ -80,6 +80,10 @@
   form.newgroup{display:flex;gap:8px;margin:16px 0}
   form.newgroup input{flex:1}
   .hidden{display:none!important}
+  .grip{touch-action:none;cursor:grab;-webkit-user-select:none;user-select:none;border:none;background:none;color:var(--muted);font-size:20px;line-height:1;padding:4px 6px;flex:none}
+  .grip:disabled{opacity:.3;cursor:not-allowed}
+  .dragging{position:relative;z-index:30;background:var(--card);box-shadow:0 6px 20px rgba(0,0,0,.35);opacity:.97;cursor:grabbing}
+  .dragging-groups details > :not(summary){display:none}
   .importbtn{display:block;width:100%;margin:0 0 12px}
   .imp{background:var(--card);border:1px solid var(--accent);border-radius:14px;margin:0 0 12px;padding:10px 0;overflow:hidden}
   .imp h3{margin:0;padding:0 14px 8px;font-size:16px}
@@ -330,7 +334,9 @@ window.addEventListener("unhandledrejection", (e) => {
 });
 
 // Don't rebuild the page under someone who is typing in the edit view.
+let dragActive = false;
 function safeRender() {
+  if (dragActive) { pendingRender = true; return; }
   const a = document.activeElement;
   const typing = a && $("list").contains(a)
     && ((a.tagName === "INPUT" && (a.type === "text" || a.type === "search")) || a.tagName === "TEXTAREA")
@@ -475,6 +481,7 @@ function render() {
     const key = (shop ? "s:" : edit ? "e:" : "p:") + cat;
     const d = document.createElement("details");
     d.open = q ? true : (openState[key] ?? !edit);
+    if (edit) d.dataset.id = cat;
     d.addEventListener("toggle", () => { if (q) return; openState[key] = d.open; localStorage.setItem("openCats", JSON.stringify(openState)); });
     const count = shop ? `${all.filter((i) => i.needed && !i.checked).length} igjen` : edit ? `${all.length}` : (need ? `${need} valgt` : "");
     const sum = document.createElement("summary");
@@ -487,6 +494,14 @@ function render() {
       nameInp.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); });
       for (const ev of ["keydown", "keyup"]) nameInp.addEventListener(ev, (e) => e.stopPropagation());
       nameInp.addEventListener("change", () => renameGroup(cat, nameInp.value));
+      const gripG = document.createElement("button");
+      gripG.type = "button"; gripG.className = "grip"; gripG.textContent = "⠿";
+      gripG.setAttribute("aria-label", "Dra for å flytte gruppen");
+      gripG.disabled = !!q || !!filterCat || onlyNeeded;
+      gripG.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); });
+      gripG.addEventListener("pointerdown", (e) => dragSort(e, d, root, (ids) => saveGroupOrder(ids),
+        () => { root.classList.add("dragging-groups"); return () => root.classList.remove("dragging-groups"); }));
+      sum.prepend(gripG);
       for (const [label, dir] of [["▲", -1], ["▼", 1]]) {
         const b = document.createElement("button");
         b.type = "button"; b.className = "ico"; b.textContent = label;
@@ -508,12 +523,23 @@ function render() {
       const li = document.createElement("li");
       if (edit) {
         li.className = "edit";
-        li.innerHTML = `<input class="sel" type="checkbox" ${selected.has(it.id) ? "checked" : ""} aria-label="Velg"><input class="t" type="text" value="${esc(it.text)}" aria-label="Varenavn">
+        li.dataset.id = it.id;
+        li.innerHTML = `<button class="grip" type="button" aria-label="Dra for å flytte">⠿</button><input class="sel" type="checkbox" ${selected.has(it.id) ? "checked" : ""} aria-label="Velg"><input class="t" type="text" value="${esc(it.text)}" aria-label="Varenavn">
           <select aria-label="Flytt til gruppe">${names.map((n) => `<option ${n === cat ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>
           <button class="ico" type="button" aria-label="Opp">▲</button>
           <button class="ico" type="button" aria-label="Ned">▼</button>
           <button class="ico" type="button" aria-label="Slett">🗑</button>`;
-        const [up, down, del] = li.querySelectorAll("button");
+        const [up, down, del] = li.querySelectorAll("button.ico");
+        const grip = li.querySelector(".grip");
+        grip.disabled = reorderOff;
+        grip.addEventListener("pointerdown", (e) => {
+          if (reorderOff) return;
+          dragSort(e, li, ul, async (ids) => {
+            const byId = new Map(list.map((i) => [i.id, i]));
+            const ordered = ids.map((id) => byId.get(id)).filter(Boolean);
+            await batchOver(ordered, (b, i) => { const o = ordered.indexOf(i); if (i.order !== o) b.update(doc(db, "items", i.id), { order: o }); });
+          });
+        });
         up.disabled = reorderOff || idx === 0;
         down.disabled = reorderOff || idx === list.length - 1;
         const inp = li.querySelector("input.t");
@@ -1022,6 +1048,65 @@ async function bulkDelete() {
   if (!del.length || !confirm(`Slette ${del.length} varer for godt?`)) return;
   await batchOver(del, (b, it) => b.delete(doc(db, "items", it.id)));
   selected.clear(); render();
+}
+
+// ---------- drag & drop reordering (pointer events: mouse + touch) ----------
+// el: the dragged element, container: its parent; children with data-id take part.
+// onDone(ids) gets the new id order; prep() may return an undo function (e.g. collapse groups while dragging).
+function dragSort(e, el, container, onDone, prep) {
+  if (e.button != null && e.button > 0) return;
+  e.preventDefault();
+  const grip = e.currentTarget;
+  try { grip.setPointerCapture(e.pointerId); } catch {}
+  dragActive = true;
+  const undo = prep?.();
+  const sibs = () => [...container.children].filter((c) => c !== el && c.dataset.id);
+  const r0 = el.getBoundingClientRect();
+  const grab = Math.min(Math.max(e.clientY - r0.top, 0), r0.height);
+  let y = e.clientY;
+  el.classList.add("dragging");
+  const place = () => {
+    el.style.transform = "";
+    const natural = el.getBoundingClientRect().top;
+    el.style.transform = `translateY(${y - grab - natural}px)`;
+  };
+  const reorderOnce = () => {
+    const r = el.getBoundingClientRect(), center = r.top + r.height / 2;
+    for (const sb of sibs()) {
+      const sr = sb.getBoundingClientRect(), mid = sr.top + sr.height / 2;
+      const sbAfter = !!(el.compareDocumentPosition(sb) & Node.DOCUMENT_POSITION_FOLLOWING);
+      if (sbAfter && center > mid) { sb.after(el); return true; }
+      if (!sbAfter && center < mid) { sb.before(el); return true; }
+    }
+    return false;
+  };
+  const update = () => {
+    place();
+    for (let i = 0; i < 50 && reorderOnce(); i++) place();
+  };
+  update();
+  const move = (ev) => { y = ev.clientY; update(); };
+  const timer = setInterval(() => {            // auto-scroll near the edges
+    if (y < 70) window.scrollBy(0, -14); else if (y > window.innerHeight - 70) window.scrollBy(0, 14); else return;
+    update();
+  }, 16);
+  const finish = (save) => {
+    clearInterval(timer);
+    grip.removeEventListener("pointermove", move);
+    grip.removeEventListener("pointerup", up);
+    grip.removeEventListener("pointercancel", cancel);
+    el.classList.remove("dragging");
+    el.style.transform = "";
+    const ids = [...container.children].filter((c) => c.dataset.id).map((c) => c.dataset.id);
+    undo?.();
+    dragActive = false;
+    pendingRender = false;
+    if (save) Promise.resolve(onDone(ids)).finally(() => render()); else render();
+  };
+  const up = () => finish(true), cancel = () => finish(false);
+  grip.addEventListener("pointermove", move);
+  grip.addEventListener("pointerup", up);
+  grip.addEventListener("pointercancel", cancel);
 }
 
 // ---------- edit operations ----------
