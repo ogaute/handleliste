@@ -55,6 +55,14 @@
   .login h1{text-align:center}
   .err{color:var(--danger);font-size:14px;min-height:1.2em}
   .empty{text-align:center;color:var(--muted);margin:40px 0}
+  .tabs{display:flex;gap:6px;margin-top:8px}
+  .tabs button{flex:1;padding:10px;font-weight:600}
+  .tabs button.active{background:var(--accent);color:var(--accent-text);border-color:var(--accent)}
+  .badge{display:inline-block;min-width:20px;padding:0 6px;border-radius:10px;background:var(--line);color:var(--text);font-size:12px;font-weight:600}
+  .tabs button.active .badge{background:rgba(255,255,255,.3);color:inherit}
+  .search{width:100%;margin-top:8px}
+  li.need .txt{font-weight:600}
+  li.need{background:color-mix(in srgb,var(--accent) 12%,transparent)}
   .hidden{display:none!important}
   .quickadd{display:flex;gap:8px;margin-top:8px}
   .quickadd input{flex:1}
@@ -79,21 +87,27 @@
       <span class="status" id="status">kobler til…</span>
       <button class="link" id="menuBtn" aria-label="Meny">⋯</button>
     </div>
+    <div class="tabs" role="tablist">
+      <button id="tabPlan" role="tab">📝 Planlegg</button>
+      <button id="tabShop" role="tab">🛒 Handle <span class="badge" id="shopCount">0</span></button>
+    </div>
+    <input type="search" id="search" class="search" placeholder="Søk i alle varer…" autocomplete="off">
     <form class="quickadd" id="quickForm">
-      <input type="text" id="quickText" placeholder="Legg til vare…" autocomplete="off">
+      <input type="text" id="quickText" placeholder="Legg til ny vare…" autocomplete="off">
       <select id="quickCat" aria-label="Kategori"></select>
       <button class="primary" type="submit">+</button>
     </form>
     <div class="toolbar hidden" id="menu">
-      <label><input type="checkbox" id="hideDone"> Skjul avkryssede</label>
-      <button id="uncheckAll">Nullstill avkryssing</button>
-      <button id="deleteDone">Slett avkryssede</button>
+      <label id="hideDoneLbl"><input type="checkbox" id="hideDone"> Skjul avkryssede</label>
+      <button id="finishShop">Ferdig handlet</button>
+      <button id="uncheckAll">Fjern avkryssing</button>
+      <button id="clearNeeded">Tøm handlelisten</button>
       <button id="seedBtn" class="hidden">Last inn startliste</button>
       <button id="logout">Logg ut</button>
     </div>
   </header>
   <main id="list"></main>
-  <div class="empty hidden" id="empty">Listen er tom. Åpne «⋯» og velg «Last inn startliste», eller legg til varer over.</div>
+  <div class="empty hidden" id="empty"></div>
 </div>
 
 <script type="module">
@@ -167,14 +181,16 @@ async function addItem(text, category) {
   const inCat = items.filter((i) => i.category === category);
   const order = inCat.length ? Math.max(...inCat.map((i) => i.order ?? 0)) + 1 : 0;
   await addDoc(itemsCol, {
-    text, category, checked: false, order,
+    text, category, needed: true, checked: false, order,
     addedBy: (auth.currentUser?.email || "").split("@")[0],
     createdAt: serverTimestamp()
   });
 }
-const toggle = (it) => updateDoc(doc(db, "items", it.id), {
-  checked: !it.checked, checkedBy: !it.checked ? (auth.currentUser?.email || "").split("@")[0] : null
-});
+// needed  = on the shopping list (chosen while planning)
+// checked = in the cart (ticked while shopping; only meaningful when needed)
+const upd = (it, data) => updateDoc(doc(db, "items", it.id), data);
+const toggleNeeded = (it) => upd(it, { needed: !it.needed, checked: false });
+const toggleChecked = (it) => upd(it, { checked: !it.checked });
 const remove = (it) => deleteDoc(doc(db, "items", it.id));
 
 async function batchOver(list, fn) {
@@ -186,8 +202,14 @@ async function batchOver(list, fn) {
 }
 
 // ---------- render ----------
+let mode = localStorage.getItem("mode") === "shop" ? "shop" : "plan";
+
 function render() {
-  const hide = $("hideDone").checked;
+  const shop = mode === "shop";
+  const q = $("search").value.trim().toLocaleLowerCase("nb");
+  const hide = shop && $("hideDone").checked;
+  const cmp = (a, b) => ((a.order ?? 0) - (b.order ?? 0)) || a.text.localeCompare(b.text, "nb");
+
   const byCat = new Map();
   categoryOrder.forEach((c) => byCat.set(c, []));
   items.forEach((it) => {
@@ -196,41 +218,69 @@ function render() {
   });
   const cats = [...byCat.keys()];
 
+  const neededCount = items.filter((i) => i.needed).length;
+  $("shopCount").textContent = neededCount;
+  $("tabPlan").classList.toggle("active", !shop);
+  $("tabShop").classList.toggle("active", shop);
+  $("search").classList.toggle("hidden", shop);
+  $("quickForm").classList.toggle("hidden", shop);
+  $("hideDoneLbl").classList.toggle("hidden", !shop);
+  $("finishShop").classList.toggle("hidden", !shop);
+  $("uncheckAll").classList.toggle("hidden", !shop);
+
   const sel = $("quickCat"); const keep = sel.value;
   sel.innerHTML = cats.map((c) => `<option>${esc(c)}</option>`).join("");
   if (cats.includes(keep)) sel.value = keep;
 
-  $("empty").classList.toggle("hidden", items.length > 0);
   $("seedBtn").classList.toggle("hidden", items.length > 0);
+  const empty = $("empty");
+  empty.classList.toggle("hidden", !(items.length === 0 || (shop && neededCount === 0)));
+  empty.textContent = items.length === 0
+    ? "Listen er tom. Åpne «⋯» og velg «Last inn startliste»."
+    : "Handlelisten er tom. Gå til «Planlegg» og trykk på varene du trenger.";
 
   const root = $("list");
   root.innerHTML = "";
   for (const cat of cats) {
-    const list = byCat.get(cat).sort((a, b) => (a.checked - b.checked) || ((a.order ?? 0) - (b.order ?? 0)) || a.text.localeCompare(b.text, "nb"));
-    const remaining = list.filter((i) => !i.checked).length;
+    let list = byCat.get(cat);
+    const need = list.filter((i) => i.needed).length;
+    if (shop) list = list.filter((i) => i.needed);
+    else if (q) list = list.filter((i) => i.text.toLocaleLowerCase("nb").includes(q));
+    if (hide) list = list.filter((i) => !i.checked);
+    if (!list.length && (shop || q)) continue;
+    list.sort(shop ? (a, b) => (!!a.checked - !!b.checked) || cmp(a, b) : cmp);
+
+    const key = (shop ? "s:" : "p:") + cat;
     const d = document.createElement("details");
-    d.open = openState[cat] ?? true;
-    d.addEventListener("toggle", () => { openState[cat] = d.open; localStorage.setItem("openCats", JSON.stringify(openState)); });
-    d.innerHTML = `<summary>${esc(cat)}<span class="count">${remaining} igjen</span></summary>`;
+    d.open = q ? true : (openState[key] ?? true);
+    d.addEventListener("toggle", () => { if (q) return; openState[key] = d.open; localStorage.setItem("openCats", JSON.stringify(openState)); });
+    const count = shop ? `${byCat.get(cat).filter((i) => i.needed && !i.checked).length} igjen` : (need ? `${need} valgt` : "");
+    d.innerHTML = `<summary>${esc(cat)}<span class="count">${count}</span></summary>`;
     const ul = document.createElement("ul");
     for (const it of list) {
-      if (hide && it.checked) continue;
       const li = document.createElement("li");
-      if (it.checked) li.className = "done";
-      li.innerHTML = `<input type="checkbox" ${it.checked ? "checked" : ""} aria-label="Avkryss">
+      const on = shop ? it.checked : it.needed;
+      li.className = shop ? (it.checked ? "done" : "") : (it.needed ? "need" : "");
+      li.innerHTML = `<input type="checkbox" ${on ? "checked" : ""} aria-label="${shop ? "I handlekurven" : "Trenger"}">
         <span class="txt">${esc(it.text)}</span>
-        <button class="x" aria-label="Slett">✕</button>`;
-      li.querySelector("input").addEventListener("change", () => toggle(it));
-      li.querySelector(".txt").addEventListener("click", () => toggle(it));
-      li.querySelector(".x").addEventListener("click", () => { if (confirm(`Slette «${it.text}»?`)) remove(it); });
+        <button class="x" aria-label="${shop ? "Fjern fra handlelisten" : "Slett vare"}">✕</button>`;
+      const act = () => (shop ? toggleChecked(it) : toggleNeeded(it));
+      li.querySelector("input").addEventListener("change", act);
+      li.querySelector(".txt").addEventListener("click", act);
+      li.querySelector(".x").addEventListener("click", () => {
+        if (shop) upd(it, { needed: false, checked: false });
+        else if (confirm(`Slette «${it.text}» fra varelisten for godt?`)) remove(it);
+      });
       ul.appendChild(li);
     }
     d.appendChild(ul);
-    const f = document.createElement("form");
-    f.className = "add";
-    f.innerHTML = `<input type="text" placeholder="Ny vare i ${esc(cat)}…" autocomplete="off"><button type="submit">+</button>`;
-    f.addEventListener("submit", (e) => { e.preventDefault(); const inp = f.querySelector("input"); addItem(inp.value, cat); inp.value = ""; });
-    d.appendChild(f);
+    if (!shop) {
+      const f = document.createElement("form");
+      f.className = "add";
+      f.innerHTML = `<input type="text" placeholder="Ny vare i ${esc(cat)}…" autocomplete="off"><button type="submit">+</button>`;
+      f.addEventListener("submit", (e) => { e.preventDefault(); const inp = f.querySelector("input"); addItem(inp.value, cat); inp.value = ""; });
+      d.appendChild(f);
+    }
     root.appendChild(d);
   }
 }
@@ -244,19 +294,24 @@ $("quickForm").addEventListener("submit", (e) => {
 });
 $("menuBtn").addEventListener("click", () => $("menu").classList.toggle("hidden"));
 $("hideDone").addEventListener("change", () => { localStorage.setItem("hideDone", $("hideDone").checked ? "1" : "0"); render(); });
-$("uncheckAll").addEventListener("click", () => {
-  const l = items.filter((i) => i.checked);
-  if (l.length && confirm(`Fjerne avkryssing på ${l.length} varer?`)) batchOver(l, (b, it) => b.update(doc(db, "items", it.id), { checked: false, checkedBy: null }));
-});
-$("deleteDone").addEventListener("click", () => {
-  const l = items.filter((i) => i.checked);
-  if (l.length && confirm(`Slette ${l.length} avkryssede varer?`)) batchOver(l, (b, it) => b.delete(doc(db, "items", it.id)));
-});
+const setMode = (m) => { mode = m; localStorage.setItem("mode", m); window.scrollTo(0, 0); render(); };
+$("tabPlan").addEventListener("click", () => setMode("plan"));
+$("tabShop").addEventListener("click", () => setMode("shop"));
+$("search").addEventListener("input", render);
+const bulk = (pred, data, msg) => {
+  const l = items.filter(pred);
+  $("menu").classList.add("hidden");
+  if (l.length && confirm(msg(l.length))) batchOver(l, (b, it) => b.update(doc(db, "items", it.id), data));
+};
+// Done shopping: ticked items leave the shopping list (back to the master list, unticked)
+$("finishShop").addEventListener("click", () => bulk((i) => i.needed && i.checked, { needed: false, checked: false }, (n) => `Fjerne ${n} avkryssede varer fra handlelisten?`));
+$("uncheckAll").addEventListener("click", () => bulk((i) => i.needed && i.checked, { checked: false }, (n) => `Fjerne avkryssing på ${n} varer?`));
+$("clearNeeded").addEventListener("click", () => bulk((i) => i.needed, { needed: false, checked: false }, (n) => `Tømme hele handlelisten (${n} varer)?`));
 $("seedBtn").addEventListener("click", async () => {
   if (items.length) return;
   const seed = await (await fetch("seed.json")).json();
   const rows = [];
-  seed.forEach((c) => c.items.forEach((it, i) => rows.push({ text: it.text, category: c.name, checked: !!it.checked, order: i })));
+  seed.forEach((c) => c.items.forEach((it, i) => rows.push({ text: it.text, category: c.name, needed: false, checked: false, order: i })));
   await batchOver(rows, (b, r) => b.set(doc(itemsCol), { ...r, addedBy: "import", createdAt: serverTimestamp() }));
 });
 
