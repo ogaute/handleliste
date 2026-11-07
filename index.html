@@ -54,6 +54,8 @@
   form.add input{flex:1}
   .login{max-width:360px;margin:15vh auto 0;display:flex;flex-direction:column;gap:10px}
   .login h1{text-align:center}
+  .login-form{display:flex;flex-direction:column;gap:10px;padding:10px 14px 14px;border-top:1px solid var(--line)}
+  .login button{padding:12px}
   .err{color:var(--danger);font-size:14px;min-height:1.2em}
   .empty{text-align:center;color:var(--muted);margin:40px 0}
   .tabs{display:flex;gap:6px;margin-top:8px;overflow-x:auto;scrollbar-width:none}
@@ -161,13 +163,20 @@
 <body>
 
 <div id="loginView" class="wrap hidden">
-  <form class="login" id="loginForm">
+  <div class="login">
     <h1>🛒 Handleliste</h1>
-    <input type="email" id="email" placeholder="E-post" autocomplete="username" required>
-    <input type="password" id="password" placeholder="Passord" autocomplete="current-password" required>
-    <button class="primary" type="submit">Logg inn</button>
+    <button class="primary" type="button" id="googleBtn">Logg inn med Google</button>
+    <button type="button" id="yahooBtn">Logg inn med Yahoo</button>
     <div class="err" id="loginErr"></div>
-  </form>
+    <details id="emailLogin">
+      <summary>Logg inn med e-post og passord</summary>
+      <form class="login-form" id="loginForm">
+        <input type="email" id="email" placeholder="E-post" autocomplete="username" required>
+        <input type="password" id="password" placeholder="Passord" autocomplete="current-password" required>
+        <button class="primary" type="submit">Logg inn</button>
+      </form>
+    </details>
+  </div>
 </div>
 
 <div id="appView" class="wrap hidden">
@@ -226,7 +235,7 @@
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
-import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut }
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, GoogleAuthProvider, OAuthProvider, signInWithPopup }
   from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
   collection, onSnapshot, addDoc, setDoc, updateDoc, deleteDoc, doc, writeBatch, serverTimestamp }
@@ -283,6 +292,24 @@ $("loginForm").addEventListener("submit", async (e) => {
     $("loginErr").textContent = "Feil e-post eller passord.";
   }
 });
+// Google/Yahoo sign-in: they handle 2FA (if enabled on the account); Firestore rules still limit access to the two e-mails.
+async function providerLogin(provider) {
+  $("loginErr").textContent = "";
+  try {
+    await signInWithPopup(auth, provider);
+  } catch (err) {
+    const msgs = {
+      "auth/popup-blocked": "Nettleseren blokkerte innloggingsvinduet. Tillat popup og prøv igjen.",
+      "auth/account-exists-with-different-credential": "Denne e-posten er knyttet til en annen innloggingsmåte. Prøv Google eller e-post.",
+      "auth/unauthorized-domain": "Domenet er ikke godkjent i Firebase (Authentication → Settings → Authorized domains).",
+      "auth/operation-not-allowed": "Denne innloggingsmåten er ikke slått på i Firebase ennå."
+    };
+    if (["auth/popup-closed-by-user", "auth/cancelled-popup-request"].includes(err.code)) return;
+    $("loginErr").textContent = msgs[err.code] || ("Innlogging feilet (" + (err.code || err.message) + ").");
+  }
+}
+$("googleBtn").addEventListener("click", () => providerLogin(new GoogleAuthProvider()));
+$("yahooBtn").addEventListener("click", () => providerLogin(new OAuthProvider("yahoo.com")));
 $("logout").addEventListener("click", () => signOut(auth));
 
 // ---------- data ----------
