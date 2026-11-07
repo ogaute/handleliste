@@ -20,5 +20,9 @@ service cloud.firestore {
     match /meals/{id} {
       allow read, write: if allowed();
     }
+    // Saved dinners (name, ingredients, recipe text)
+    match /recipes/{id} {
+      allow read, write: if allowed();
+    }
   }
 }
