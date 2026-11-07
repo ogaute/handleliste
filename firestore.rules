@@ -16,5 +16,9 @@ service cloud.firestore {
     match /categories/{id} {
       allow read, write: if allowed();
     }
+    // Weekly dinner plan (one doc per weekday)
+    match /meals/{id} {
+      allow read, write: if allowed();
+    }
   }
 }
