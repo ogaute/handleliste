@@ -1,0 +1,16 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Only the two household accounts may read/write the list.
+    function allowed() {
+      return request.auth != null
+        && request.auth.token.email in [
+          "oyvind.gautestad@gmail.com",
+          "susanne_hvale@yahoo.com"
+        ];
+    }
+    match /items/{id} {
+      allow read, write: if allowed();
+    }
+  }
+}
