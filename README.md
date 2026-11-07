@@ -16,3 +16,14 @@ Shared shopping list with real-time sync. Static site on GitHub Pages + Firebase
 4. On iPhone: Safari → Share → **Add to Home Screen**.
 
 The Firebase web config is not a secret; the rules + login are what protect the data.
+
+## Importere oppskrifter
+
+Lokalt verktøy (kun Python, ingen installasjon):
+
+```
+python hent_oppskrift.py https://www.matprat.no/oppskrifter/gjester/pasta-bolognese/
+```
+
+Resultatet kopieres til utklippstavlen. I appen: **Middager → 📥 Importer**, lim inn, kontroller ingrediensene
+(velg kategori for varer som ikke finnes fra før) og lagre. Virker på sider med strukturerte data (schema.org/Recipe).
