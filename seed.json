@@ -1,0 +1,1181 @@
+[
+  {
+    "name": "Frukt og grønt",
+    "items": [
+      {
+        "text": "Frukt pære, banan]",
+        "checked": false
+      },
+      {
+        "text": "Vannmelon",
+        "checked": false
+      },
+      {
+        "text": "Blå druer og grønne",
+        "checked": false
+      },
+      {
+        "text": "Kiwi",
+        "checked": false
+      },
+      {
+        "text": "Banan",
+        "checked": false
+      },
+      {
+        "text": "Appelsin",
+        "checked": false
+      },
+      {
+        "text": "Eple",
+        "checked": false
+      },
+      {
+        "text": "Til Clementiner",
+        "checked": false
+      },
+      {
+        "text": "Paprika",
+        "checked": false
+      },
+      {
+        "text": "Agurk",
+        "checked": false
+      },
+      {
+        "text": "Tomat",
+        "checked": false
+      },
+      {
+        "text": "Salat",
+        "checked": false
+      },
+      {
+        "text": "Rucola",
+        "checked": false
+      },
+      {
+        "text": "Spinat",
+        "checked": false
+      },
+      {
+        "text": "Rød Løk",
+        "checked": false
+      },
+      {
+        "text": "Gul løk",
+        "checked": false
+      },
+      {
+        "text": "sjalottløk",
+        "checked": false
+      },
+      {
+        "text": "Hvitløk",
+        "checked": false
+      },
+      {
+        "text": "Vårløk",
+        "checked": false
+      },
+      {
+        "text": "Purre",
+        "checked": false
+      },
+      {
+        "text": "Avocado",
+        "checked": false
+      },
+      {
+        "text": "Broccoli,",
+        "checked": false
+      },
+      {
+        "text": "Blomkål",
+        "checked": false
+      },
+      {
+        "text": "Gulerøtter",
+        "checked": false
+      },
+      {
+        "text": "Poteter",
+        "checked": false
+      },
+      {
+        "text": "Bær.-bringebær 2 pk.",
+        "checked": false
+      },
+      {
+        "text": "Jordbær",
+        "checked": false
+      },
+      {
+        "text": "Lime",
+        "checked": false
+      },
+      {
+        "text": "Sitron",
+        "checked": false
+      },
+      {
+        "text": "Mango",
+        "checked": false
+      },
+      {
+        "text": "Sjampinjong sopp",
+        "checked": false
+      },
+      {
+        "text": "Kål",
+        "checked": false
+      },
+      {
+        "text": "Fennikel",
+        "checked": false
+      },
+      {
+        "text": "Persillerot",
+        "checked": false
+      },
+      {
+        "text": "🫜",
+        "checked": false
+      },
+      {
+        "text": "Kålrot",
+        "checked": false
+      },
+      {
+        "text": "Selerirot",
+        "checked": false
+      },
+      {
+        "text": "Stangselleri",
+        "checked": false
+      },
+      {
+        "text": "Ingefær syltet",
+        "checked": false
+      },
+      {
+        "text": "Chili",
+        "checked": false
+      },
+      {
+        "text": "Basilikum",
+        "checked": false
+      },
+      {
+        "text": "Timian",
+        "checked": false
+      },
+      {
+        "text": "Koriander",
+        "checked": false
+      },
+      {
+        "text": "Bønnespirer",
+        "checked": false
+      },
+      {
+        "text": "Rosmarin",
+        "checked": false
+      },
+      {
+        "text": "bladpersille",
+        "checked": false
+      },
+      {
+        "text": "Persille",
+        "checked": false
+      },
+      {
+        "text": "Ananas",
+        "checked": false
+      },
+      {
+        "text": "Pinjekjærner",
+        "checked": false
+      },
+      {
+        "text": "Mynte",
+        "checked": false
+      },
+      {
+        "text": "Sitronmelisse",
+        "checked": false
+      },
+      {
+        "text": "Epler",
+        "checked": false
+      },
+      {
+        "text": "Oliven",
+        "checked": false
+      }
+    ]
+  },
+  {
+    "name": "Pålegg",
+    "items": [
+      {
+        "text": "Kjøttpålegg [skinke, salami",
+        "checked": false
+      },
+      {
+        "text": "Salami",
+        "checked": false
+      },
+      {
+        "text": "Spekeskinke",
+        "checked": false
+      },
+      {
+        "text": "Svinestek (pålegg)",
+        "checked": false
+      },
+      {
+        "text": "Salat [italiensk, reke, kylling, krabbe]",
+        "checked": false
+      },
+      {
+        "text": "Krabbesalat",
+        "checked": false
+      },
+      {
+        "text": "Kaviar",
+        "checked": false
+      },
+      {
+        "text": "Prim",
+        "checked": false
+      },
+      {
+        "text": "Majones",
+        "checked": false
+      },
+      {
+        "text": "Ost Jarlsberg",
+        "checked": false
+      },
+      {
+        "text": "Mozzerella",
+        "checked": false
+      },
+      {
+        "text": "Brunost",
+        "checked": false
+      },
+      {
+        "text": "Ost revet",
+        "checked": false
+      },
+      {
+        "text": "Ost skivet",
+        "checked": false
+      },
+      {
+        "text": "Fetaost",
+        "checked": false
+      },
+      {
+        "text": "Sheddar",
+        "checked": false
+      },
+      {
+        "text": "Kremost",
+        "checked": false
+      },
+      {
+        "text": "Ost permesan",
+        "checked": false
+      },
+      {
+        "text": "Ost salat",
+        "checked": false
+      },
+      {
+        "text": "Philadelphia ost 800 g",
+        "checked": false
+      },
+      {
+        "text": "Bringebærsyltetøy",
+        "checked": false
+      },
+      {
+        "text": "Syltetøy [jorb, blåb  ]",
+        "checked": false
+      },
+      {
+        "text": "Tyttebærsyltetøy",
+        "checked": false
+      },
+      {
+        "text": "Rørt jordbær?",
+        "checked": false
+      },
+      {
+        "text": "Makrell i tomat engangs",
+        "checked": false
+      },
+      {
+        "text": "Leverpostei engangs",
+        "checked": false
+      },
+      {
+        "text": "Akasie Honning",
+        "checked": false
+      },
+      {
+        "text": "Blåbær syltet",
+        "checked": false
+      },
+      {
+        "text": "Cornflakes",
+        "checked": false
+      },
+      {
+        "text": "Maiskaker",
+        "checked": false
+      },
+      {
+        "text": "Fitnes korn",
+        "checked": false
+      },
+      {
+        "text": "4korn",
+        "checked": false
+      },
+      {
+        "text": "Sur agurk",
+        "checked": false
+      }
+    ]
+  },
+  {
+    "name": "Meieri, kjøl",
+    "items": [
+      {
+        "text": "Yoghurt [smak]",
+        "checked": false
+      },
+      {
+        "text": "Yoghurt naturell",
+        "checked": false
+      },
+      {
+        "text": "Yt youghurt",
+        "checked": false
+      },
+      {
+        "text": "Kvarg",
+        "checked": false
+      },
+      {
+        "text": "Rømme",
+        "checked": false
+      },
+      {
+        "text": "Kesam vanilje",
+        "checked": false
+      },
+      {
+        "text": "Creme Fresh",
+        "checked": false
+      },
+      {
+        "text": "Cottage cheese",
+        "checked": false
+      },
+      {
+        "text": "Melk",
+        "checked": false
+      },
+      {
+        "text": "Kefir",
+        "checked": false
+      },
+      {
+        "text": "Kremfløte 2 dl",
+        "checked": false
+      },
+      {
+        "text": "Matfløte 3 dl",
+        "checked": false
+      },
+      {
+        "text": "Helmelk",
+        "checked": false
+      },
+      {
+        "text": "Meierismør",
+        "checked": false
+      },
+      {
+        "text": "Smør",
+        "checked": false
+      },
+      {
+        "text": "Usaltet smør 200 gram",
+        "checked": false
+      },
+      {
+        "text": "Egg,",
+        "checked": false
+      },
+      {
+        "text": "BIOLA/blåbær",
+        "checked": false
+      },
+      {
+        "text": "Pitabrød",
+        "checked": false
+      },
+      {
+        "text": "Hamburgerbrød",
+        "checked": false
+      },
+      {
+        "text": "Brød",
+        "checked": false
+      },
+      {
+        "text": "200 g Philadelphia ost",
+        "checked": false
+      }
+    ]
+  },
+  {
+    "name": "Pasta, hermetikk, poser",
+    "items": [
+      {
+        "text": "Mais",
+        "checked": false
+      },
+      {
+        "text": "Hermetiske tomater",
+        "checked": false
+      },
+      {
+        "text": "Tomatpure",
+        "checked": false
+      },
+      {
+        "text": "Rødvinseddik",
+        "checked": false
+      },
+      {
+        "text": "Pariseragurk",
+        "checked": false
+      },
+      {
+        "text": "Syltet rødbeter",
+        "checked": false
+      },
+      {
+        "text": "Ris [hvit, natur*, bygg]",
+        "checked": false
+      },
+      {
+        "text": "Bernaise lett",
+        "checked": false
+      },
+      {
+        "text": "Buljong",
+        "checked": false
+      },
+      {
+        "text": "Sorte bønner",
+        "checked": false
+      },
+      {
+        "text": "Oksekraft",
+        "checked": false
+      },
+      {
+        "text": "Pizzasaus",
+        "checked": false
+      },
+      {
+        "text": "Pasta",
+        "checked": false
+      },
+      {
+        "text": "Pastasaus",
+        "checked": false
+      },
+      {
+        "text": "Nanbrød",
+        "checked": false
+      },
+      {
+        "text": "Spaghetti",
+        "checked": false
+      },
+      {
+        "text": "Ananas",
+        "checked": false
+      },
+      {
+        "text": "Oppvaskmiddel/tablett",
+        "checked": false
+      },
+      {
+        "text": "Vaksemiddel hvit",
+        "checked": false
+      },
+      {
+        "text": "Vaskemiddel farget",
+        "checked": false
+      },
+      {
+        "text": "Tøymykner",
+        "checked": false
+      },
+      {
+        "text": "Biotex flekkfjærner spray",
+        "checked": false
+      },
+      {
+        "text": "Zalo",
+        "checked": false
+      },
+      {
+        "text": "Oppvaskbørste",
+        "checked": false
+      },
+      {
+        "text": "WC vask",
+        "checked": false
+      },
+      {
+        "text": "Toalettpapir",
+        "checked": false
+      },
+      {
+        "text": "Kjøkkenpapir",
+        "checked": false
+      },
+      {
+        "text": "Refill badromspray",
+        "checked": false
+      },
+      {
+        "text": "Kjøkkenspray",
+        "checked": false
+      },
+      {
+        "text": "Allrent",
+        "checked": false
+      }
+    ]
+  },
+  {
+    "name": "Tørrvarer, mel, saus, frys",
+    "items": [
+      {
+        "text": "Ketchup",
+        "checked": false
+      },
+      {
+        "text": "Sennep Bergbys",
+        "checked": false
+      },
+      {
+        "text": "Rapsolje",
+        "checked": false
+      },
+      {
+        "text": "Olivenolje",
+        "checked": false
+      },
+      {
+        "text": "Matolje",
+        "checked": false
+      },
+      {
+        "text": "Mel [hvete, bygg]",
+        "checked": false
+      },
+      {
+        "text": "Rugmel grovmalt",
+        "checked": false
+      },
+      {
+        "text": "Sammalt grovt mel",
+        "checked": false
+      },
+      {
+        "text": "Melis",
+        "checked": false
+      },
+      {
+        "text": "Gjær til søt bakst",
+        "checked": false
+      },
+      {
+        "text": "Sukker",
+        "checked": false
+      },
+      {
+        "text": "Havregryn",
+        "checked": false
+      },
+      {
+        "text": "Solsikkekjerner",
+        "checked": false
+      },
+      {
+        "text": "gresskarkjerner",
+        "checked": false
+      },
+      {
+        "text": "Riskaker",
+        "checked": false
+      },
+      {
+        "text": "Rundstykker",
+        "checked": false
+      },
+      {
+        "text": "Knekkebrød",
+        "checked": false
+      },
+      {
+        "text": "Knekkebrød stor pakke Wasa",
+        "checked": false
+      },
+      {
+        "text": "Potetmel",
+        "checked": false
+      },
+      {
+        "text": "Maismel",
+        "checked": false
+      },
+      {
+        "text": "Hvitvinseddik",
+        "checked": false
+      },
+      {
+        "text": "Grove nudler",
+        "checked": false
+      },
+      {
+        "text": "Gulrotkake",
+        "checked": false
+      },
+      {
+        "text": "Creme brûlée",
+        "checked": false
+      },
+      {
+        "text": "Nudler",
+        "checked": false
+      },
+      {
+        "text": "Grønnsaksblanding",
+        "checked": false
+      },
+      {
+        "text": "Fitnes korn",
+        "checked": false
+      },
+      {
+        "text": "Pommes frittes",
+        "checked": false
+      },
+      {
+        "text": "Filodeig (vårruller)",
+        "checked": false
+      },
+      {
+        "text": "Panko",
+        "checked": false
+      },
+      {
+        "text": "Tortillas (store)",
+        "checked": false
+      },
+      {
+        "text": "Salsa",
+        "checked": false
+      },
+      {
+        "text": "Ferdig Toro vafler",
+        "checked": false
+      },
+      {
+        "text": "Sesamfrø",
+        "checked": false
+      },
+      {
+        "text": "Linfrø",
+        "checked": false
+      },
+      {
+        "text": "Kruskakli",
+        "checked": false
+      },
+      {
+        "text": "Havrekli",
+        "checked": false
+      },
+      {
+        "text": "Digestive kjeks",
+        "checked": false
+      },
+      {
+        "text": "2 pk. med bringebær gelé pulver",
+        "checked": false
+      },
+      {
+        "text": "2 sjokolademousse",
+        "checked": false
+      },
+      {
+        "text": "Potetgull",
+        "checked": false
+      },
+      {
+        "text": "Popcorn",
+        "checked": false
+      }
+    ]
+  },
+  {
+    "name": "Krydder",
+    "items": [
+      {
+        "text": "Krydder [, oregano,        ]",
+        "checked": false
+      },
+      {
+        "text": "Muskatnøtt",
+        "checked": false
+      },
+      {
+        "text": "spisskummen",
+        "checked": false
+      },
+      {
+        "text": "Kardemomme",
+        "checked": false
+      },
+      {
+        "text": "Gram masala",
+        "checked": false
+      },
+      {
+        "text": "Paprikakrydder",
+        "checked": false
+      },
+      {
+        "text": "Paprikapulver",
+        "checked": false
+      },
+      {
+        "text": "Løkpulver",
+        "checked": false
+      },
+      {
+        "text": "Timian",
+        "checked": false
+      },
+      {
+        "text": "basilikumkrydder",
+        "checked": false
+      },
+      {
+        "text": "Cayenne",
+        "checked": false
+      },
+      {
+        "text": "Oregano",
+        "checked": false
+      },
+      {
+        "text": "Basilikum",
+        "checked": false
+      },
+      {
+        "text": "Esteagon",
+        "checked": false
+      },
+      {
+        "text": "Pepper",
+        "checked": false
+      },
+      {
+        "text": "Laurbærblad",
+        "checked": false
+      },
+      {
+        "text": "Natron",
+        "checked": false
+      },
+      {
+        "text": "Salt",
+        "checked": false
+      }
+    ]
+  },
+  {
+    "name": "Saus",
+    "items": [
+      {
+        "text": "Soyasaus",
+        "checked": false
+      },
+      {
+        "text": "Sweet chillisaus",
+        "checked": false
+      },
+      {
+        "text": "Fiskesaus",
+        "checked": false
+      },
+      {
+        "text": "Hoisinsaus",
+        "checked": false
+      }
+    ]
+  },
+  {
+    "name": "Juice, kaffe, saft, drikke",
+    "items": [
+      {
+        "text": "Juice [eple, appelsin] 1x",
+        "checked": false
+      },
+      {
+        "text": "Lemonade juice",
+        "checked": false
+      },
+      {
+        "text": "Kaffe",
+        "checked": false
+      },
+      {
+        "text": "Kaffe espresso",
+        "checked": false
+      },
+      {
+        "text": "Kaffe sjok",
+        "checked": false
+      },
+      {
+        "text": "Iskaffe",
+        "checked": false
+      },
+      {
+        "text": "Smoothie",
+        "checked": false
+      },
+      {
+        "text": "Grønn Te",
+        "checked": false
+      },
+      {
+        "text": "Frukt te",
+        "checked": false
+      },
+      {
+        "text": "Dugestive kjeks",
+        "checked": false
+      },
+      {
+        "text": "Saft [fun: rød, gul]a",
+        "checked": false
+      },
+      {
+        "text": "Øl",
+        "checked": false
+      },
+      {
+        "text": "Cider",
+        "checked": false
+      },
+      {
+        "text": "Brus  (mozell)",
+        "checked": false
+      },
+      {
+        "text": "Gransbrus",
+        "checked": false
+      },
+      {
+        "text": "Cola",
+        "checked": false
+      },
+      {
+        "text": "Is sorbet is og vaniljeis",
+        "checked": false
+      },
+      {
+        "text": "Is",
+        "checked": false
+      },
+      {
+        "text": "Sjokolade",
+        "checked": false
+      },
+      {
+        "text": "Sjokolade 70 %",
+        "checked": false
+      },
+      {
+        "text": "Mørk kokesjokolade 200 g",
+        "checked": false
+      },
+      {
+        "text": "Salt godteri",
+        "checked": true
+      },
+      {
+        "text": "Docs",
+        "checked": false
+      },
+      {
+        "text": "Chillinøtter",
+        "checked": false
+      },
+      {
+        "text": "Micropopkorn",
+        "checked": false
+      },
+      {
+        "text": "Lørdagsgodt Liam",
+        "checked": true
+      },
+      {
+        "text": "Fisherman’s friend/Cura med/Doc",
+        "checked": false
+      }
+    ]
+  },
+  {
+    "name": "Hygiene og diverse",
+    "items": [
+      {
+        "text": "Dusjsåpe",
+        "checked": false
+      },
+      {
+        "text": "Håndsåpe",
+        "checked": false
+      },
+      {
+        "text": "Lepomade",
+        "checked": false
+      },
+      {
+        "text": "Hårspray",
+        "checked": false
+      },
+      {
+        "text": "Sjampo",
+        "checked": false
+      },
+      {
+        "text": "Balsam",
+        "checked": false
+      },
+      {
+        "text": "Tørrsjampo",
+        "checked": false
+      },
+      {
+        "text": "Ansiktsrens",
+        "checked": false
+      },
+      {
+        "text": "Deo [susanne, øyvind]",
+        "checked": false
+      },
+      {
+        "text": "WC vask",
+        "checked": false
+      },
+      {
+        "text": "Bad vask",
+        "checked": false
+      },
+      {
+        "text": "Kjøkken vask",
+        "checked": false
+      },
+      {
+        "text": "Speilvask",
+        "checked": false
+      },
+      {
+        "text": "Tannkrem colgate",
+        "checked": false
+      },
+      {
+        "text": "Tannbørste",
+        "checked": false
+      },
+      {
+        "text": "Makeup fjerner",
+        "checked": false
+      },
+      {
+        "text": "Bomullpads",
+        "checked": false
+      },
+      {
+        "text": "Q-tips",
+        "checked": false
+      },
+      {
+        "text": "T-lys",
+        "checked": false
+      },
+      {
+        "text": "Plaster",
+        "checked": false
+      },
+      {
+        "text": "Popcorn",
+        "checked": false
+      },
+      {
+        "text": "Potetgull",
+        "checked": false
+      },
+      {
+        "text": "Maarud popcorn cheddar",
+        "checked": false
+      },
+      {
+        "text": "Ostepop",
+        "checked": false
+      },
+      {
+        "text": "Cashew",
+        "checked": false
+      },
+      {
+        "text": "Fanta exotic",
+        "checked": false
+      },
+      {
+        "text": "Batteri cr2025",
+        "checked": false
+      },
+      {
+        "text": "Batteri cr2032",
+        "checked": false
+      },
+      {
+        "text": "AA batter",
+        "checked": false
+      }
+    ]
+  },
+  {
+    "name": "Kjøkken",
+    "items": [
+      {
+        "text": "Bakepapir",
+        "checked": false
+      },
+      {
+        "text": "Søppelposer",
+        "checked": false
+      },
+      {
+        "text": "Mellomleggspapir",
+        "checked": false
+      },
+      {
+        "text": "Aluminiumsfolie",
+        "checked": false
+      },
+      {
+        "text": "Oppvaskbørste",
+        "checked": false
+      },
+      {
+        "text": "Plastfolie",
+        "checked": false
+      },
+      {
+        "text": "Brødposer",
+        "checked": false
+      },
+      {
+        "text": "Avfallsposer",
+        "checked": false
+      },
+      {
+        "text": "Kaffefilt.",
+        "checked": false
+      },
+      {
+        "text": "Sannasol",
+        "checked": false
+      },
+      {
+        "text": "Tran",
+        "checked": false
+      },
+      {
+        "text": "Gelé med bringebærsmak",
+        "checked": false
+      },
+      {
+        "text": "Hel pepper",
+        "checked": false
+      },
+      {
+        "text": "Superlim",
+        "checked": false
+      },
+      {
+        "text": "HvitløkSpulver",
+        "checked": false
+      },
+      {
+        "text": "Sennep",
+        "checked": false
+      }
+    ]
+  },
+  {
+    "name": "Middag",
+    "items": [
+      {
+        "text": "Fredag:",
+        "checked": false
+      },
+      {
+        "text": "Lørdag:",
+        "checked": false
+      },
+      {
+        "text": "Søndag: lammekoteletter",
+        "checked": false
+      },
+      {
+        "text": "Mandag:",
+        "checked": false
+      },
+      {
+        "text": "Tirsdag: fiskegrateng",
+        "checked": false
+      },
+      {
+        "text": "Onsdag: pasta bolognese?",
+        "checked": false
+      },
+      {
+        "text": "Torsdag:",
+        "checked": false
+      }
+    ]
+  }
+]

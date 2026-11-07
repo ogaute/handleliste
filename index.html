@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="nb">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2f7d4f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Handleliste">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="icon" href="icon.svg">
+<title>Handleliste</title>
+<style>
+  :root{
+    --bg:#f5f6f4; --card:#fff; --text:#1d2420; --muted:#6b756f; --line:#e2e6e2;
+    --accent:#2f7d4f; --accent-text:#fff; --danger:#c0392b;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#121513; --card:#1c211e; --text:#e8ece9; --muted:#8c978f; --line:#2b332e; --accent:#4cae75; --accent-text:#0b1a11; --danger:#e07062; }
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--bg);color:var(--text);font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+       padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+  .wrap{max-width:640px;margin:0 auto;padding:0 16px 80px}
+  header{position:sticky;top:0;z-index:5;background:var(--bg);padding:12px 0 8px;border-bottom:1px solid var(--line)}
+  .row{display:flex;gap:8px;align-items:center}
+  h1{font-size:20px;margin:0;flex:1}
+  .status{font-size:12px;color:var(--muted)}
+  .status.off::before{content:"● ";color:#d9822b}
+  .status.on::before{content:"● ";color:var(--accent)}
+  button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:10px;padding:8px 12px;cursor:pointer}
+  button.primary{background:var(--accent);color:var(--accent-text);border-color:var(--accent)}
+  button.link{border:none;background:none;color:var(--muted);padding:4px 8px}
+  input,select{font:inherit;color:var(--text);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-width:0}
+  input[type=text],input[type=email],input[type=password]{width:100%}
+  .toolbar{margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .toolbar label{font-size:14px;color:var(--muted);display:flex;gap:6px;align-items:center}
+  details{background:var(--card);border:1px solid var(--line);border-radius:14px;margin:12px 0;overflow:hidden}
+  summary{list-style:none;cursor:pointer;padding:12px 14px;display:flex;align-items:center;gap:8px;font-weight:600}
+  summary::-webkit-details-marker{display:none}
+  summary .count{margin-left:auto;font-weight:400;font-size:13px;color:var(--muted)}
+  summary::before{content:"▸";color:var(--muted);transition:transform .15s}
+  details[open] summary::before{transform:rotate(90deg)}
+  ul{list-style:none;margin:0;padding:0}
+  li{display:flex;align-items:center;gap:10px;padding:10px 14px;border-top:1px solid var(--line)}
+  li .txt{flex:1;word-break:break-word;cursor:pointer;user-select:none}
+  li.done .txt{text-decoration:line-through;color:var(--muted)}
+  li input[type=checkbox]{width:24px;height:24px;accent-color:var(--accent);flex:none}
+  li .x{border:none;background:none;color:var(--muted);font-size:18px;padding:4px 8px}
+  li .who{font-size:11px;color:var(--muted)}
+  form.add{display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--line)}
+  form.add input{flex:1}
+  .login{max-width:360px;margin:15vh auto 0;display:flex;flex-direction:column;gap:10px}
+  .login h1{text-align:center}
+  .err{color:var(--danger);font-size:14px;min-height:1.2em}
+  .empty{text-align:center;color:var(--muted);margin:40px 0}
+  .hidden{display:none!important}
+  .quickadd{display:flex;gap:8px;margin-top:8px}
+  .quickadd input{flex:1}
+</style>
+</head>
+<body>
+
+<div id="loginView" class="wrap hidden">
+  <form class="login" id="loginForm">
+    <h1>🛒 Handleliste</h1>
+    <input type="email" id="email" placeholder="E-post" autocomplete="username" required>
+    <input type="password" id="password" placeholder="Passord" autocomplete="current-password" required>
+    <button class="primary" type="submit">Logg inn</button>
+    <div class="err" id="loginErr"></div>
+  </form>
+</div>
+
+<div id="appView" class="wrap hidden">
+  <header>
+    <div class="row">
+      <h1>🛒 Handleliste</h1>
+      <span class="status" id="status">kobler til…</span>
+      <button class="link" id="menuBtn" aria-label="Meny">⋯</button>
+    </div>
+    <form class="quickadd" id="quickForm">
+      <input type="text" id="quickText" placeholder="Legg til vare…" autocomplete="off">
+      <select id="quickCat" aria-label="Kategori"></select>
+      <button class="primary" type="submit">+</button>
+    </form>
+    <div class="toolbar hidden" id="menu">
+      <label><input type="checkbox" id="hideDone"> Skjul avkryssede</label>
+      <button id="uncheckAll">Nullstill avkryssing</button>
+      <button id="deleteDone">Slett avkryssede</button>
+      <button id="seedBtn" class="hidden">Last inn startliste</button>
+      <button id="logout">Logg ut</button>
+    </div>
+  </header>
+  <main id="list"></main>
+  <div class="empty hidden" id="empty">Listen er tom. Åpne «⋯» og velg «Last inn startliste», eller legg til varer over.</div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut }
+  from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
+  collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, writeBatch, serverTimestamp }
+  from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { firebaseConfig } from "./firebase-config.js";
+
+const $ = (id) => document.getElementById(id);
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+});
+const itemsCol = collection(db, "items");
+
+let items = [];
+let unsub = null;
+let categoryOrder = [];
+const openState = JSON.parse(localStorage.getItem("openCats") || "{}");
+$("hideDone").checked = localStorage.getItem("hideDone") === "1";
+
+// ---------- auth ----------
+onAuthStateChanged(auth, (user) => {
+  if (user) {
+    $("loginView").classList.add("hidden");
+    $("appView").classList.remove("hidden");
+    subscribe();
+  } else {
+    if (unsub) { unsub(); unsub = null; }
+    items = [];
+    $("appView").classList.add("hidden");
+    $("loginView").classList.remove("hidden");
+  }
+});
+
+$("loginForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  $("loginErr").textContent = "";
+  try {
+    await signInWithEmailAndPassword(auth, $("email").value.trim(), $("password").value);
+  } catch (err) {
+    $("loginErr").textContent = "Feil e-post eller passord.";
+  }
+});
+$("logout").addEventListener("click", () => signOut(auth));
+
+// ---------- data ----------
+function subscribe() {
+  if (unsub) unsub();
+  unsub = onSnapshot(itemsCol, { includeMetadataChanges: true }, (snap) => {
+    items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const st = $("status");
+    const offline = snap.metadata.fromCache && !navigator.onLine;
+    st.textContent = offline ? "frakoblet" : (snap.metadata.hasPendingWrites ? "synker…" : "live");
+    st.className = "status " + (offline ? "off" : "on");
+    render();
+  }, (err) => {
+    $("status").textContent = "ingen tilgang";
+    $("status").className = "status off";
+    console.error(err);
+  });
+}
+
+async function addItem(text, category) {
+  text = text.trim();
+  if (!text) return;
+  const inCat = items.filter((i) => i.category === category);
+  const order = inCat.length ? Math.max(...inCat.map((i) => i.order ?? 0)) + 1 : 0;
+  await addDoc(itemsCol, {
+    text, category, checked: false, order,
+    addedBy: (auth.currentUser?.email || "").split("@")[0],
+    createdAt: serverTimestamp()
+  });
+}
+const toggle = (it) => updateDoc(doc(db, "items", it.id), {
+  checked: !it.checked, checkedBy: !it.checked ? (auth.currentUser?.email || "").split("@")[0] : null
+});
+const remove = (it) => deleteDoc(doc(db, "items", it.id));
+
+async function batchOver(list, fn) {
+  for (let i = 0; i < list.length; i += 400) {
+    const b = writeBatch(db);
+    list.slice(i, i + 400).forEach((it) => fn(b, it));
+    await b.commit();
+  }
+}
+
+// ---------- render ----------
+function render() {
+  const hide = $("hideDone").checked;
+  const byCat = new Map();
+  categoryOrder.forEach((c) => byCat.set(c, []));
+  items.forEach((it) => {
+    if (!byCat.has(it.category)) byCat.set(it.category, []);
+    byCat.get(it.category).push(it);
+  });
+  const cats = [...byCat.keys()];
+
+  const sel = $("quickCat"); const keep = sel.value;
+  sel.innerHTML = cats.map((c) => `<option>${esc(c)}</option>`).join("");
+  if (cats.includes(keep)) sel.value = keep;
+
+  $("empty").classList.toggle("hidden", items.length > 0);
+  $("seedBtn").classList.toggle("hidden", items.length > 0);
+
+  const root = $("list");
+  root.innerHTML = "";
+  for (const cat of cats) {
+    const list = byCat.get(cat).sort((a, b) => (a.checked - b.checked) || ((a.order ?? 0) - (b.order ?? 0)) || a.text.localeCompare(b.text, "nb"));
+    const remaining = list.filter((i) => !i.checked).length;
+    const d = document.createElement("details");
+    d.open = openState[cat] ?? true;
+    d.addEventListener("toggle", () => { openState[cat] = d.open; localStorage.setItem("openCats", JSON.stringify(openState)); });
+    d.innerHTML = `<summary>${esc(cat)}<span class="count">${remaining} igjen</span></summary>`;
+    const ul = document.createElement("ul");
+    for (const it of list) {
+      if (hide && it.checked) continue;
+      const li = document.createElement("li");
+      if (it.checked) li.className = "done";
+      li.innerHTML = `<input type="checkbox" ${it.checked ? "checked" : ""} aria-label="Avkryss">
+        <span class="txt">${esc(it.text)}</span>
+        <button class="x" aria-label="Slett">✕</button>`;
+      li.querySelector("input").addEventListener("change", () => toggle(it));
+      li.querySelector(".txt").addEventListener("click", () => toggle(it));
+      li.querySelector(".x").addEventListener("click", () => { if (confirm(`Slette «${it.text}»?`)) remove(it); });
+      ul.appendChild(li);
+    }
+    d.appendChild(ul);
+    const f = document.createElement("form");
+    f.className = "add";
+    f.innerHTML = `<input type="text" placeholder="Ny vare i ${esc(cat)}…" autocomplete="off"><button type="submit">+</button>`;
+    f.addEventListener("submit", (e) => { e.preventDefault(); const inp = f.querySelector("input"); addItem(inp.value, cat); inp.value = ""; });
+    d.appendChild(f);
+    root.appendChild(d);
+  }
+}
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+// ---------- UI wiring ----------
+$("quickForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  addItem($("quickText").value, $("quickCat").value);
+  $("quickText").value = "";
+});
+$("menuBtn").addEventListener("click", () => $("menu").classList.toggle("hidden"));
+$("hideDone").addEventListener("change", () => { localStorage.setItem("hideDone", $("hideDone").checked ? "1" : "0"); render(); });
+$("uncheckAll").addEventListener("click", () => {
+  const l = items.filter((i) => i.checked);
+  if (l.length && confirm(`Fjerne avkryssing på ${l.length} varer?`)) batchOver(l, (b, it) => b.update(doc(db, "items", it.id), { checked: false, checkedBy: null }));
+});
+$("deleteDone").addEventListener("click", () => {
+  const l = items.filter((i) => i.checked);
+  if (l.length && confirm(`Slette ${l.length} avkryssede varer?`)) batchOver(l, (b, it) => b.delete(doc(db, "items", it.id)));
+});
+$("seedBtn").addEventListener("click", async () => {
+  if (items.length) return;
+  const seed = await (await fetch("seed.json")).json();
+  const rows = [];
+  seed.forEach((c) => c.items.forEach((it, i) => rows.push({ text: it.text, category: c.name, checked: !!it.checked, order: i })));
+  await batchOver(rows, (b, r) => b.set(doc(itemsCol), { ...r, addedBy: "import", createdAt: serverTimestamp() }));
+});
+
+// Keep the category order from the seed file for empty/new categories
+fetch("seed.json").then((r) => r.json()).then((s) => { categoryOrder = s.map((c) => c.name); render(); }).catch(() => {});
+
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+</script>
+</body>
+</html>
