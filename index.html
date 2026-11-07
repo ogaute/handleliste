@@ -55,8 +55,9 @@
   .login h1{text-align:center}
   .err{color:var(--danger);font-size:14px;min-height:1.2em}
   .empty{text-align:center;color:var(--muted);margin:40px 0}
-  .tabs{display:flex;gap:6px;margin-top:8px}
-  .tabs button{flex:1;padding:10px 4px;font-weight:600;font-size:14px}
+  .tabs{display:flex;gap:6px;margin-top:8px;overflow-x:auto;scrollbar-width:none}
+  .tabs::-webkit-scrollbar{display:none}
+  .tabs button{flex:1 0 auto;padding:10px 10px;font-weight:600;font-size:14px;white-space:nowrap}
   .tabs button.active{background:var(--accent);color:var(--accent-text);border-color:var(--accent)}
   .badge{display:inline-block;min-width:20px;padding:0 6px;border-radius:10px;background:var(--line);color:var(--text);font-size:12px;font-weight:600}
   .tabs button.active .badge{background:rgba(255,255,255,.3);color:inherit}
@@ -65,16 +66,46 @@
   li.need{background:color-mix(in srgb,var(--accent) 12%,transparent)}
   .ico{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:6px 10px;font-size:15px;line-height:1}
   summary .ico{padding:4px 8px}
+  summary input.gname{flex:1;min-width:0;font-weight:700;font-size:17px;color:var(--accent);letter-spacing:.2px;padding:6px 10px;background:transparent;border-color:transparent}
+  summary input.gname:focus{background:var(--card);border-color:var(--line)}
   summary .count + .ico{margin-left:4px}
   li.edit{flex-wrap:wrap;gap:6px}
-  li.edit input.t{flex:1 1 55%;min-width:0;padding:8px 10px}
-  li.edit select{flex:1 1 30%;min-width:0;padding:8px;max-width:11em}
-  li.edit .ico{flex:none}
+  li.edit input.t{flex:1 1 calc(100% - 36px);min-width:0;padding:10px 12px;font-size:16px;font-weight:400}
+  li.edit select{flex:1 1 0;min-width:0;padding:6px 8px;font-size:13px;color:var(--muted);background:transparent}
+  li.edit .ico{flex:none;padding:10px 14px}
+  li.edit{padding:12px 14px}
   .grouptools{display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--line);align-items:center}
   .grouptools input{flex:1}
   form.newgroup{display:flex;gap:8px;margin:16px 0}
   form.newgroup input{flex:1}
   .hidden{display:none!important}
+  textarea{font:inherit;color:var(--text);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;width:100%;min-height:130px;resize:vertical}
+  .recipe-body{padding:10px 14px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:6px}
+  .recipe-body label{font-size:13px;color:var(--muted)}
+  .recipe-view{white-space:pre-wrap;padding:10px 14px;border-top:1px solid var(--line);font-size:15px}
+  details.inner{border:none;border-top:1px solid var(--line);border-radius:0;margin:0}
+  details.inner summary{font-weight:500;font-size:14px;color:var(--muted)}
+  .planrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 14px;border-top:1px solid var(--line)}
+  .planrow select{flex:1 1 8em;padding:8px}
+  .newrecipe{display:flex;gap:8px;margin:12px 0}
+  .newrecipe input{flex:1}
+  li input.qty{width:6em;flex:none;padding:6px 8px;font-size:14px;border-radius:8px}
+  .qtyb{display:inline-block;margin-left:8px;padding:0 8px;border-radius:10px;background:var(--accent);color:var(--accent-text);font-size:13px;font-weight:600;vertical-align:1px}
+  #editTools{margin:12px 0 0}
+  .bulkbar{position:sticky;bottom:calc(8px + env(safe-area-inset-bottom));display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+    background:var(--card);border:1px solid var(--accent);border-radius:12px;padding:8px 12px;margin-top:12px;box-shadow:0 4px 16px rgba(0,0,0,.25)}
+  .bulkbar #bulkCount{font-weight:600;flex:1 1 100%}
+  .bulkbar select{flex:1 1 0;padding:8px}
+  li.edit input.sel{width:20px;height:20px;accent-color:var(--accent);flex:none}
+  .dups{background:var(--card);border:1px solid var(--accent);border-radius:14px;margin:12px 0;padding:10px 14px}
+  .dups h3{margin:0 0 6px;font-size:15px;display:flex;align-items:center;gap:8px}
+  .dups h3 button{margin-left:auto}
+  .dupgroup{border-top:1px solid var(--line);padding:6px 0;display:flex;flex-direction:column;gap:4px}
+  .duprow{display:flex;align-items:center;gap:8px}
+  .duprow .n{flex:1;font-weight:600}
+  .duprow .c{color:var(--muted);font-size:12px}
+  .duprow button{padding:4px 10px}
+  .clearbtn{display:block;width:100%;margin:16px 0;padding:12px;color:var(--danger);border-color:var(--danger)}
   .picker{padding:10px 14px;border-top:1px solid var(--line)}
   .picker input{width:100%}
   .sugg{display:flex;flex-direction:column;gap:6px;margin-top:8px}
@@ -89,6 +120,25 @@
   li .sub{display:block;font-size:12px;color:var(--muted);font-weight:400}
   .quickadd{display:flex;gap:8px;margin-top:8px}
   .quickadd input{flex:1}
+  /* Desktop edit mode: compact table, one item per row */
+  @media (min-width: 640px){
+    body[data-mode=edit] .wrap{max-width:1000px}
+    body[data-mode=edit] details{margin:6px 0;border-radius:8px}
+    body[data-mode=edit] summary{padding:3px 10px}
+    body[data-mode=edit] summary input.gname{padding:2px 8px;font-size:16px}
+    body[data-mode=edit] summary .ico{padding:2px 9px}
+    body[data-mode=edit] li.edit{flex-wrap:nowrap;gap:8px;padding:1px 10px}
+    body[data-mode=edit] li.edit:nth-child(even){background:color-mix(in srgb,var(--text) 4%,transparent)}
+    body[data-mode=edit] li.edit input.t{flex:1 1 auto;padding:3px 8px;font-size:15px;border-radius:6px;border-color:transparent;background:transparent}
+    body[data-mode=edit] li.edit input.t:hover{border-color:var(--line)}
+    body[data-mode=edit] li.edit input.t:focus{background:var(--card);border-color:var(--accent);outline:none}
+    body[data-mode=edit] li.edit select{flex:0 0 clamp(130px,25vw,220px);padding:2px 6px;font-size:13px;border-radius:6px}
+    body[data-mode=edit] li.edit .ico{padding:2px 10px;border-radius:6px}
+    body[data-mode=edit] form.add{padding:3px 10px}
+    body[data-mode=edit] form.add input{padding:3px 8px;border-radius:6px}
+    body[data-mode=edit] form.add button{padding:2px 12px}
+    body[data-mode=edit] form.newgroup{margin:10px 0}
+  }
 </style>
 </head>
 <body>
@@ -112,8 +162,9 @@
     </div>
     <div class="tabs" role="tablist">
       <button id="tabPlan" role="tab">📝 Planlegg</button>
-      <button id="tabMeals" role="tab">🍽 Middag</button>
+      <button id="tabMeals" role="tab">🗓 Uke</button>
       <button id="tabShop" role="tab">🛒 Handle <span class="badge" id="shopCount">0</span></button>
+      <button id="tabRecipes" role="tab">📖 Middager</button>
       <button id="tabEdit" role="tab">✏️ Rediger</button>
     </div>
     <input type="search" id="search" class="search" placeholder="Søk i alle varer…" autocomplete="off">
@@ -132,7 +183,25 @@
       <button id="logout">Logg ut</button>
     </div>
   </header>
+  <div class="toolbar hidden" id="editTools">
+    <select id="fCat" aria-label="Filtrer på kategori"></select>
+    <label><input type="checkbox" id="fNeeded"> Kun på handlelisten</label>
+    <select id="fSort" aria-label="Sortering">
+      <option value="manual">Manuell rekkefølge</option>
+      <option value="az">A–Å</option>
+      <option value="new">Nyeste først</option>
+    </select>
+    <button id="btnDups" type="button">🔍 Finn duplikater</button>
+    <button id="btnSelAll" type="button">Velg alle synlige</button>
+  </div>
   <main id="list"></main>
+  <div class="bulkbar hidden" id="bulkBar">
+    <span id="bulkCount"></span>
+    <select id="bulkCat" aria-label="Flytt til kategori"></select>
+    <button id="bulkMove" type="button" class="primary">Flytt</button>
+    <button id="bulkDel" type="button" class="ico" aria-label="Slett valgte">🗑</button>
+    <button id="bulkClear" type="button" class="link">Fjern valg</button>
+  </div>
   <div class="empty hidden" id="empty"></div>
 </div>
 
@@ -155,10 +224,12 @@ const itemsCol = collection(db, "items");
 
 const catsCol = collection(db, "categories");
 const mealsCol = collection(db, "meals");
+const recipesCol = collection(db, "recipes");
 let items = [];
 let cats = [];          // [{id, name, order}] from Firestore
 let meals = [];         // [{id, day 0-6, name, ingredients[], planned}]
-let unsub = null, unsubCats = null, unsubMeals = null;
+let recipes = [];       // saved dinners: [{id, name, ingredients[], recipe}]
+let unsub = null, unsubCats = null, unsubMeals = null, unsubRecipes = null;
 let itemsLoaded = false, catsLoaded = false, pendingRender = false;
 let seedOrder = [];
 const seedOrderReady = fetch("seed.json").then((r) => r.json()).then((s) => { seedOrder = s.map((c) => c.name); }).catch(() => {});
@@ -175,7 +246,8 @@ onAuthStateChanged(auth, (user) => {
     if (unsub) { unsub(); unsub = null; }
     if (unsubCats) { unsubCats(); unsubCats = null; }
     if (unsubMeals) { unsubMeals(); unsubMeals = null; }
-    items = []; cats = []; meals = []; itemsLoaded = catsLoaded = false;
+    if (unsubRecipes) { unsubRecipes(); unsubRecipes = null; }
+    items = []; cats = []; meals = []; recipes = []; itemsLoaded = catsLoaded = false;
     $("appView").classList.add("hidden");
     $("loginView").classList.remove("hidden");
   }
@@ -197,6 +269,11 @@ function subscribe() {
   if (unsub) unsub();
   if (unsubCats) unsubCats();
   if (unsubMeals) unsubMeals();
+  if (unsubRecipes) unsubRecipes();
+  unsubRecipes = onSnapshot(recipesCol, (snap) => {
+    recipes = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    safeRender();
+  }, (err) => { console.error(err); alert("Ingen tilgang til middagsdatabasen – publiser oppdaterte regler (firestore.rules)."); });
   unsubMeals = onSnapshot(mealsCol, (snap) => {
     meals = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     safeRender();
@@ -238,7 +315,10 @@ window.addEventListener("unhandledrejection", (e) => {
 // Don't rebuild the page under someone who is typing in the edit view.
 function safeRender() {
   const a = document.activeElement;
-  if ((mode === "edit" || mode === "meals") && a && a.tagName === "INPUT" && (a.type === "text" || a.type === "search") && $("list").contains(a)) { pendingRender = true; return; }
+  const typing = a && $("list").contains(a)
+    && ((a.tagName === "INPUT" && (a.type === "text" || a.type === "search")) || a.tagName === "TEXTAREA")
+    && (["edit", "meals", "recipes"].includes(mode) || a.classList.contains("qty"));
+  if (typing) { pendingRender = true; return; }
   render();
 }
 document.addEventListener("focusout", () => { if (pendingRender) { pendingRender = false; setTimeout(render, 50); } });
@@ -281,7 +361,7 @@ async function addItem(text, category, needed = true) {
 // needed  = on the shopping list (chosen while planning)
 // checked = in the cart (ticked while shopping; only meaningful when needed)
 const upd = (it, data) => updateDoc(doc(db, "items", it.id), data);
-const toggleNeeded = (it) => upd(it, { needed: !it.needed, checked: false });
+const toggleNeeded = (it) => upd(it, { needed: !it.needed, checked: false, qty: "" });
 const toggleChecked = (it) => upd(it, { checked: !it.checked });
 const remove = (it) => deleteDoc(doc(db, "items", it.id));
 
@@ -294,13 +374,21 @@ async function batchOver(list, fn) {
 }
 
 // ---------- render ----------
-let mode = ["shop", "edit", "meals"].includes(localStorage.getItem("mode")) ? localStorage.getItem("mode") : "plan";
+// edit-view tools
+let editSort = "manual", filterCat = "", onlyNeeded = false, showDups = false;
+const selected = new Set();
+let visibleEditIds = [];
+const tsOf = (i) => i.createdAt?.seconds ?? Infinity;   // pending (not yet synced) writes sort as newest
+const editCmp = (a, b) => editSort === "az" ? a.text.localeCompare(b.text, "nb")
+  : editSort === "new" ? (tsOf(b) - tsOf(a)) || a.text.localeCompare(b.text, "nb") : cmpItems(a, b);
+let mode = ["shop", "edit", "meals", "recipes"].includes(localStorage.getItem("mode")) ? localStorage.getItem("mode") : "plan";
 
 // Same order+text => duplicates (e.g. the same ingredient for two dinners) end up directly under each other.
 const cmpItems = (a, b) => ((a.order ?? 0) - (b.order ?? 0)) || a.text.localeCompare(b.text, "nb") || ((a.day ?? 0) - (b.day ?? 0));
 
 function render() {
   const shop = mode === "shop", edit = mode === "edit";
+  document.body.dataset.mode = mode;
   const q = $("search").value.trim().toLocaleLowerCase("nb");
   const hide = shop && $("hideDone").checked;
 
@@ -313,17 +401,30 @@ function render() {
   $("tabPlan").classList.toggle("active", mode === "plan");
   $("tabShop").classList.toggle("active", shop);
   $("tabEdit").classList.toggle("active", edit);
+  const recMode = mode === "recipes";
   const mealsMode = mode === "meals";
+  $("tabRecipes").classList.toggle("active", recMode);
+  $("search").placeholder = recMode ? "Søk i middager…" : "Søk i alle varer…";
   $("tabMeals").classList.toggle("active", mealsMode);
   $("clearMeals").classList.toggle("hidden", !mealsMode);
-  $("clearNeeded").classList.toggle("hidden", mealsMode);
+  $("clearNeeded").classList.toggle("hidden", mealsMode || recMode);
   $("search").classList.toggle("hidden", shop || mealsMode);
-  $("quickForm").classList.toggle("hidden", shop || edit || mealsMode);
+  $("quickForm").classList.toggle("hidden", shop || edit || mealsMode || recMode);
   $("hideDoneLbl").classList.toggle("hidden", !shop);
   $("finishShop").classList.toggle("hidden", !shop);
   $("uncheckAll").classList.toggle("hidden", !shop);
 
-  if (mealsMode) { $("empty").classList.add("hidden"); $("seedBtn").classList.add("hidden"); renderMeals(); return; }
+  if (mealsMode || recMode) { $("empty").classList.add("hidden"); $("seedBtn").classList.add("hidden"); (recMode ? renderRecipes : renderMeals)(); return; }
+
+  $("editTools").classList.toggle("hidden", !edit);
+  if (edit) {
+    if (filterCat && !names.includes(filterCat)) filterCat = "";
+    $("fCat").innerHTML = `<option value="">Alle kategorier</option>` + names.map((n) => `<option ${n === filterCat ? "selected" : ""}>${esc(n)}</option>`).join("");
+    $("fNeeded").checked = onlyNeeded; $("fSort").value = editSort;
+    $("btnDups").classList.toggle("primary", showDups);
+    visibleEditIds = [];
+  }
+  updateBulk();
 
   const sel = $("quickCat"); const keep = sel.value;
   sel.innerHTML = names.map((c) => `<option>${esc(c)}</option>`).join("");
@@ -338,16 +439,21 @@ function render() {
 
   const root = $("list");
   root.innerHTML = "";
+  if (edit && showDups) root.appendChild(dupPanel());
   names.forEach((cat, gi) => {
     const all = byCat.get(cat);
+    if (edit && filterCat && cat !== filterCat) return;
     let list = all.slice();
+    if (edit && onlyNeeded) list = list.filter((i) => i.needed);
     const need = all.filter((i) => i.needed).length;
     if (shop) list = list.filter((i) => i.needed);
     else if (q) list = list.filter((i) => i.text.toLocaleLowerCase("nb").includes(q));
     if (hide) list = list.filter((i) => !i.checked);
     if (!list.length && (shop || (q && !edit))) return;
-    if (!list.length && edit && q) return;
-    list.sort(shop ? (a, b) => (!!a.checked - !!b.checked) || cmpItems(a, b) : cmpItems);
+    if (!list.length && edit && (q || filterCat || onlyNeeded)) return;
+    list.sort(edit ? editCmp : cmpItems);
+    if (edit) list.forEach((i) => visibleEditIds.push(i.id));
+    const reorderOff = !!q || !!filterCat || onlyNeeded || editSort !== "manual";
 
     const key = (shop ? "s:" : edit ? "e:" : "p:") + cat;
     const d = document.createElement("details");
@@ -355,8 +461,15 @@ function render() {
     d.addEventListener("toggle", () => { if (q) return; openState[key] = d.open; localStorage.setItem("openCats", JSON.stringify(openState)); });
     const count = shop ? `${all.filter((i) => i.needed && !i.checked).length} igjen` : edit ? `${all.length}` : (need ? `${need} valgt` : "");
     const sum = document.createElement("summary");
-    sum.innerHTML = `${esc(cat)}<span class="count">${count}</span>`;
+    sum.innerHTML = edit
+      ? `<input type="text" class="gname" value="${esc(cat)}" aria-label="Gruppenavn"><span class="count">${count}</span>`
+      : `${esc(cat)}<span class="count">${count}</span>`;
     if (edit) {
+      // rename right in the header, without expanding the group
+      const nameInp = sum.querySelector("input");
+      nameInp.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); });
+      for (const ev of ["keydown", "keyup"]) nameInp.addEventListener(ev, (e) => e.stopPropagation());
+      nameInp.addEventListener("change", () => renameGroup(cat, nameInp.value));
       for (const [label, dir] of [["▲", -1], ["▼", 1]]) {
         const b = document.createElement("button");
         b.type = "button"; b.className = "ico"; b.textContent = label;
@@ -365,34 +478,29 @@ function render() {
         b.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); moveGroup(names, gi, dir); });
         sum.appendChild(b);
       }
+      const delB = document.createElement("button");
+      delB.type = "button"; delB.className = "ico"; delB.textContent = "🗑";
+      delB.setAttribute("aria-label", "Slett gruppe");
+      delB.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); deleteGroup(cat, all.length); });
+      sum.appendChild(delB);
     }
     d.appendChild(sum);
-
-    if (edit) {
-      // group tools: rename + delete
-      const gt = document.createElement("div");
-      gt.className = "grouptools";
-      gt.innerHTML = `<input type="text" value="${esc(cat)}" aria-label="Gruppenavn"><button class="ico" type="button" aria-label="Slett gruppe">🗑</button>`;
-      const nameInp = gt.querySelector("input");
-      nameInp.addEventListener("change", () => renameGroup(cat, nameInp.value));
-      gt.querySelector("button").addEventListener("click", () => deleteGroup(cat, all.length));
-      d.appendChild(gt);
-    }
 
     const ul = document.createElement("ul");
     list.forEach((it, idx) => {
       const li = document.createElement("li");
       if (edit) {
         li.className = "edit";
-        li.innerHTML = `<input class="t" type="text" value="${esc(it.text)}" aria-label="Varenavn">
+        li.innerHTML = `<input class="sel" type="checkbox" ${selected.has(it.id) ? "checked" : ""} aria-label="Velg"><input class="t" type="text" value="${esc(it.text)}" aria-label="Varenavn">
           <select aria-label="Flytt til gruppe">${names.map((n) => `<option ${n === cat ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>
           <button class="ico" type="button" aria-label="Opp">▲</button>
           <button class="ico" type="button" aria-label="Ned">▼</button>
-          <button class="ico" type="button" aria-label="Slett">✕</button>`;
+          <button class="ico" type="button" aria-label="Slett">🗑</button>`;
         const [up, down, del] = li.querySelectorAll("button");
-        up.disabled = !!q || idx === 0;
-        down.disabled = !!q || idx === list.length - 1;
-        const inp = li.querySelector("input");
+        up.disabled = reorderOff || idx === 0;
+        down.disabled = reorderOff || idx === list.length - 1;
+        const inp = li.querySelector("input.t");
+        li.querySelector("input.sel").addEventListener("change", (e) => { e.target.checked ? selected.add(it.id) : selected.delete(it.id); updateBulk(); });
         inp.addEventListener("change", () => { const t = inp.value.trim(); if (t && t !== it.text) upd(it, { text: t }); else inp.value = it.text; });
         li.querySelector("select").addEventListener("change", (e) => moveItemToGroup(it, e.target.value));
         up.addEventListener("click", () => moveItem(list, idx, -1));
@@ -402,14 +510,16 @@ function render() {
         const on = shop ? it.checked : it.needed;
         li.className = shop ? (it.checked ? "done" : "") : (it.needed ? "need" : "");
         li.innerHTML = `<input type="checkbox" ${on ? "checked" : ""} aria-label="${shop ? "I handlekurven" : "Trenger"}">
-          <span class="txt">${esc(it.text)}${it.mealId ? `<span class="sub">${esc(DAYS[it.day] ?? "")} · ${esc(it.mealName || "")}</span>` : ""}</span>
-          <button class="x" aria-label="${shop ? "Fjern fra handlelisten" : "Slett vare"}">✕</button>`;
+          <span class="txt">${esc(it.text)}${shop && it.qty ? `<span class="qtyb">${esc(it.qty)}</span>` : ""}${it.mealId ? `<span class="sub">${esc(DAYS[it.day] ?? "")} · ${esc(it.mealName || "")}</span>` : ""}</span>
+          ${!shop && it.needed ? `<input class="qty" type="text" placeholder="antall" value="${esc(it.qty || "")}" aria-label="Antall (valgfritt)" autocomplete="off">` : ""}
+          ${shop ? `<button class="x" aria-label="Fjern fra handlelisten">🗑</button>` : ""}`;
         const act = () => (shop ? toggleChecked(it) : toggleNeeded(it));
         li.querySelector("input").addEventListener("change", act);
         li.querySelector(".txt").addEventListener("click", act);
-        li.querySelector(".x").addEventListener("click", () => {
-          if (shop) { if (it.mealId) remove(it); else upd(it, { needed: false, checked: false }); }
-          else if (confirm(`Slette «${it.text}» fra varelisten for godt?`)) remove(it);
+        const qi = li.querySelector("input.qty");
+        if (qi) qi.addEventListener("change", () => upd(it, { qty: qi.value.trim() }));
+        if (shop) li.querySelector(".x").addEventListener("click", () => {
+          if (it.mealId) remove(it); else upd(it, { needed: false, checked: false, qty: "" });
         });
       }
       ul.appendChild(li);
@@ -425,6 +535,14 @@ function render() {
     root.appendChild(d);
   });
 
+  if (shop && neededCount) {
+    const cb = document.createElement("button");
+    cb.type = "button"; cb.className = "clearbtn";
+    cb.textContent = "🗑 Tøm handlelisten";
+    cb.addEventListener("click", () => $("clearNeeded").click());
+    root.appendChild(cb);
+  }
+
   if (edit && !q) {
     const f = document.createElement("form");
     f.className = "newgroup";
@@ -438,7 +556,8 @@ function render() {
 const DAYS = ["Mandag", "Tirsdag", "Onsdag", "Torsdag", "Fredag", "Lørdag", "Søndag"];
 const mealRef = (day) => doc(db, "meals", "dag-" + day);
 // Ingredients are {text, category}; tolerate plain strings.
-const mealIngredients = (m) => (m.ingredients || []).map((x) => typeof x === "string" ? { text: x, category: groupNames()[0] } : x).filter((x) => x.text);
+const normIng = (list) => (list || []).map((x) => typeof x === "string" ? { text: x, category: groupNames()[0] } : x).filter((x) => x.text);
+const mealIngredients = (m) => normIng(m.ingredients);
 const mealItems = (m) => items.filter((i) => i.mealId === m.id);
 
 async function saveMealName(day, name, m) {
@@ -471,7 +590,14 @@ async function finishMeal(m) {
       needed: true, checked: false, order: master?.order ?? 0, addedBy: who, createdAt: serverTimestamp()
     });
   });
-  b.update(mealRef(m.day), { planned: true });
+  // Save to the dinner database (unless a saved dinner with this name already exists)
+  let rid = recipes.find((r) => r.id === m.recipeId)?.id || recipes.find((r) => normName(r.name) === normName(m.name))?.id;
+  if (!rid) {
+    const ref = doc(recipesCol);
+    b.set(ref, { name: m.name, ingredients: list, recipe: "", createdAt: serverTimestamp() });
+    rid = ref.id;
+  }
+  b.update(mealRef(m.day), { planned: true, recipeId: rid });
   await b.commit();
 }
 async function reopenMeal(m) {
@@ -484,7 +610,7 @@ async function reopenMeal(m) {
 }
 
 // Search the existing item list (from the Planlegg tab) or create a new item in a chosen category.
-function ingredientPicker(m, ing) {
+function ingredientPicker(ing, save) {
   const wrap = document.createElement("div");
   wrap.className = "picker";
   const names = groupNames();
@@ -493,7 +619,7 @@ function ingredientPicker(m, ing) {
   const has = (text, cat) => ing.some((x) => x.text.toLocaleLowerCase("nb") === text.toLocaleLowerCase("nb") && x.category === cat);
   const add = async (text, cat, isNew) => {
     if (isNew) await addItem(text, cat, false);   // becomes a permanent item, not on the shopping list yet
-    await setIngredients(m, [...ing, { text, category: cat }]);
+    await save([...ing, { text, category: cat }]);
   };
   const refresh = () => {
     const q = inp.value.trim(), ql = q.toLocaleLowerCase("nb");
@@ -523,6 +649,101 @@ function ingredientPicker(m, ing) {
   return wrap;
 }
 
+// ---------- dinner database ----------
+const recipeRef = (id) => doc(db, "recipes", id);
+async function planRecipe(r, day, switchTab = true) {
+  const old = meals.find((x) => x.day === day);
+  if (old && !confirm(`${DAYS[day]} har allerede «${old.name}». Erstatte den?`)) return;
+  const b = writeBatch(db);
+  if (old) mealItems(old).forEach((i) => b.delete(doc(db, "items", i.id)));
+  b.set(mealRef(day), { day, name: r.name, ingredients: normIng(r.ingredients), planned: false, recipeId: r.id });
+  await b.commit();
+  if (switchTab) setMode("meals");
+}
+async function addRecipe(name) {
+  name = name.trim();
+  if (!name) return;
+  const ex = recipes.find((r) => normName(r.name) === normName(name));
+  if (ex) { openState["r:" + ex.id] = true; alert("Det finnes allerede en middag med det navnet."); render(); return; }
+  const ref = await addDoc(recipesCol, { name, ingredients: [], recipe: "", createdAt: serverTimestamp() });
+  openState["r:" + ref.id] = true;
+  localStorage.setItem("openCats", JSON.stringify(openState));
+}
+async function deleteRecipe(r) {
+  if (!confirm(`Slette «${r.name}» fra middagsdatabasen? Varer i varelisten beholdes.`)) return;
+  await deleteDoc(recipeRef(r.id));
+}
+
+function renderRecipes() {
+  const root = $("list");
+  root.innerHTML = "";
+  const q = $("search").value.trim().toLocaleLowerCase("nb");
+
+  const nf = document.createElement("form");
+  nf.className = "newrecipe";
+  nf.innerHTML = `<input type="text" placeholder="Ny middag…" autocomplete="off"><button class="primary" type="submit">+</button>`;
+  nf.addEventListener("submit", (e) => { e.preventDefault(); const inp = nf.querySelector("input"); addRecipe(inp.value); inp.value = ""; });
+  root.appendChild(nf);
+
+  let list = recipes.slice().sort((a, b) => a.name.localeCompare(b.name, "nb"));
+  if (q) list = list.filter((r) => r.name.toLocaleLowerCase("nb").includes(q) || normIng(r.ingredients).some((x) => x.text.toLocaleLowerCase("nb").includes(q)));
+  if (!list.length) {
+    const e = document.createElement("div");
+    e.className = "empty";
+    e.textContent = recipes.length ? "Ingen treff." : "Ingen lagrede middager ennå. Legg til en over, eller fullfør en middag i «Uke» så lagres den her.";
+    root.appendChild(e);
+    return;
+  }
+
+  list.forEach((r) => {
+    const ing = normIng(r.ingredients);
+    const d = document.createElement("details");
+    const key = "r:" + r.id;
+    d.open = q ? true : (openState[key] ?? false);
+    d.addEventListener("toggle", () => { if (q) return; openState[key] = d.open; localStorage.setItem("openCats", JSON.stringify(openState)); });
+    const sum = document.createElement("summary");
+    sum.innerHTML = `${esc(r.name)}<span class="count">${ing.length} varer${r.recipe?.trim() ? " · 📖" : ""}</span>`;
+    d.appendChild(sum);
+
+    const nm = document.createElement("div");
+    nm.className = "meal-name";
+    nm.innerHTML = `<input type="text" value="${esc(r.name)}" aria-label="Navn på middag" autocomplete="off"><button class="ico" type="button" aria-label="Slett middag">🗑</button>`;
+    nm.querySelector("input").addEventListener("change", (e) => {
+      const t = e.target.value.trim();
+      if (t && t !== r.name) updateDoc(recipeRef(r.id), { name: t }); else e.target.value = r.name;
+    });
+    nm.querySelector("button").addEventListener("click", () => deleteRecipe(r));
+    d.appendChild(nm);
+
+    const save = (list2) => updateDoc(recipeRef(r.id), { ingredients: list2 });
+    const ul = document.createElement("ul");
+    ing.forEach((x, idx) => {
+      const li = document.createElement("li");
+      li.innerHTML = `<span class="txt">${esc(x.text)}<span class="sub">${esc(x.category)}</span></span><button class="x" aria-label="Fjern">🗑</button>`;
+      li.querySelector(".x").addEventListener("click", () => save(ing.filter((_, k) => k !== idx)));
+      ul.appendChild(li);
+    });
+    d.appendChild(ul);
+    d.appendChild(ingredientPicker(ing, save));
+
+    const body = document.createElement("div");
+    body.className = "recipe-body";
+    body.innerHTML = `<label>Oppskrift (lagres automatisk)</label><textarea placeholder="Skriv fremgangsmåten her…" aria-label="Oppskrift"></textarea>`;
+    const ta = body.querySelector("textarea");
+    ta.value = r.recipe || "";
+    ta.addEventListener("change", () => updateDoc(recipeRef(r.id), { recipe: ta.value }));
+    d.appendChild(body);
+
+    const pr = document.createElement("div");
+    pr.className = "planrow";
+    const firstFree = DAYS.findIndex((_, i) => !meals.some((m) => m.day === i));
+    pr.innerHTML = `<select aria-label="Dag">${DAYS.map((n, i) => `<option value="${i}" ${i === Math.max(0, firstFree) ? "selected" : ""}>${n}</option>`).join("")}</select><button class="primary" type="button">📅 Planlegg på dag</button>`;
+    pr.querySelector("button").addEventListener("click", () => planRecipe(r, +pr.querySelector("select").value));
+    d.appendChild(pr);
+    root.appendChild(d);
+  });
+}
+
 function renderMeals() {
   const root = $("list");
   root.innerHTML = "";
@@ -547,17 +768,32 @@ function renderMeals() {
     }
     d.appendChild(nf);
 
+    if (!m && recipes.length) {
+      const pr = document.createElement("div");
+      pr.className = "planrow";
+      pr.innerHTML = `<select aria-label="Velg lagret middag"><option value="">… eller velg en lagret middag</option>${recipes.slice().sort((a, b) => a.name.localeCompare(b.name, "nb")).map((r) => `<option value="${esc(r.id)}">${esc(r.name)}</option>`).join("")}</select>`;
+      pr.querySelector("select").addEventListener("change", (e) => { const r = recipes.find((x) => x.id === e.target.value); if (r) planRecipe(r, dayIdx, false); });
+      d.appendChild(pr);
+    }
+
     if (m) {
       const ing = mealIngredients(m);
       const ul = document.createElement("ul");
       ing.forEach((x, idx) => {
         const li = document.createElement("li");
-        li.innerHTML = `<span class="txt">${esc(x.text)}<span class="sub">${esc(x.category)}</span></span>` + (m.planned ? "" : `<button class="x" aria-label="Fjern">✕</button>`);
+        li.innerHTML = `<span class="txt">${esc(x.text)}<span class="sub">${esc(x.category)}</span></span>` + (m.planned ? "" : `<button class="x" aria-label="Fjern">🗑</button>`);
         if (!m.planned) li.querySelector(".x").addEventListener("click", () => setIngredients(m, ing.filter((_, k) => k !== idx)));
         ul.appendChild(li);
       });
       d.appendChild(ul);
-      if (!m.planned) d.appendChild(ingredientPicker(m, ing));
+      if (!m.planned) d.appendChild(ingredientPicker(ing, (l) => setIngredients(m, l)));
+      const rec = recipes.find((r) => r.id === m.recipeId);
+      if (rec?.recipe?.trim()) {
+        const rd = document.createElement("details");
+        rd.className = "inner";
+        rd.innerHTML = `<summary>📖 Oppskrift</summary><div class="recipe-view">${esc(rec.recipe)}</div>`;
+        d.appendChild(rd);
+      }
       const act = document.createElement("div");
       act.className = "meal-actions";
       if (m.planned) {
@@ -571,6 +807,83 @@ function renderMeals() {
     }
     root.appendChild(d);
   });
+}
+
+// ---------- smart edit tools ----------
+const normName = (t) => t.toLocaleLowerCase("nb").replace(/[^a-z0-9æøå]/g, "");
+function lev1(a, b) {   // true if edit distance <= 1
+  if (a === b) return true;
+  if (Math.abs(a.length - b.length) > 1) return false;
+  let i = 0; while (i < a.length && i < b.length && a[i] === b[i]) i++;
+  if (a.length === b.length) return a.slice(i + 1) === b.slice(i + 1);
+  return a.length > b.length ? a.slice(i + 1) === b.slice(i) : a.slice(i) === b.slice(i + 1);
+}
+function findDupGroups() {
+  const list = items.filter((i) => !i.mealId && i.category).map((i) => ({ it: i, n: normName(i.text) })).filter((x) => x.n);
+  const parent = list.map((_, i) => i);
+  const find = (x) => (parent[x] === x ? x : (parent[x] = find(parent[x])));
+  for (let a = 0; a < list.length; a++) for (let b = a + 1; b < list.length; b++) {
+    const x = list[a].n, y = list[b].n;
+    if (x === y || (x.length >= 4 && y.length >= 4 && lev1(x, y))) parent[find(a)] = find(b);
+  }
+  const groups = new Map();
+  list.forEach((x, i) => { const r = find(i); (groups.get(r) || groups.set(r, []).get(r)).push(x.it); });
+  return [...groups.values()].filter((g) => g.length > 1);
+}
+async function mergeKeep(keep, others) {
+  const b = writeBatch(db);
+  others.forEach((o) => b.delete(doc(db, "items", o.id)));
+  if (!keep.needed && others.some((o) => o.needed)) b.update(doc(db, "items", keep.id), { needed: true });
+  await b.commit();
+}
+function dupPanel() {
+  const groups = findDupGroups();
+  const box = document.createElement("div");
+  box.className = "dups";
+  box.innerHTML = `<h3>${groups.length ? `${groups.length} mulige duplikater` : "Ingen duplikater funnet 🎉"}<button type="button">Lukk</button></h3>`;
+  box.querySelector("h3 button").addEventListener("click", () => { showDups = false; render(); });
+  groups.forEach((g) => {
+    const gd = document.createElement("div");
+    gd.className = "dupgroup";
+    g.sort((a, b) => a.text.localeCompare(b.text, "nb")).forEach((it) => {
+      const r = document.createElement("div");
+      r.className = "duprow";
+      r.innerHTML = `<span class="n">${esc(it.text)}</span><span class="c">[${esc(it.category)}]${it.needed ? " · på handlelisten" : ""}</span><button type="button">Behold</button>`;
+      r.querySelector("button").addEventListener("click", () => {
+        const others = g.filter((o) => o !== it);
+        if (confirm(`Beholde «${it.text}» [${it.category}] og slette ${others.length} andre?`)) mergeKeep(it, others);
+      });
+      gd.appendChild(r);
+    });
+    box.appendChild(gd);
+  });
+  return box;
+}
+function updateBulk() {
+  const ids = new Set(items.map((i) => i.id));
+  [...selected].forEach((id) => { if (!ids.has(id)) selected.delete(id); });
+  const on = mode === "edit" && selected.size > 0;
+  $("bulkBar").classList.toggle("hidden", !on);
+  if (!on) return;
+  $("bulkCount").textContent = `${selected.size} valgt`;
+  const sel = $("bulkCat"), keep = sel.value, names = groupNames();
+  sel.innerHTML = names.map((n) => `<option>${esc(n)}</option>`).join("");
+  if (names.includes(keep)) sel.value = keep;
+}
+async function bulkMove() {
+  const target = $("bulkCat").value;
+  const moving = items.filter((i) => selected.has(i.id) && i.category !== target);
+  if (!target || !moving.length) return;
+  const inTarget = items.filter((i) => i.category === target);
+  let order = inTarget.length ? Math.max(...inTarget.map((i) => i.order ?? 0)) + 1 : 0;
+  await batchOver(moving, (b, it) => b.update(doc(db, "items", it.id), { category: target, order: order++ }));
+  selected.clear(); render();
+}
+async function bulkDelete() {
+  const del = items.filter((i) => selected.has(i.id));
+  if (!del.length || !confirm(`Slette ${del.length} varer for godt?`)) return;
+  await batchOver(del, (b, it) => b.delete(doc(db, "items", it.id)));
+  selected.clear(); render();
 }
 
 // ---------- edit operations ----------
@@ -643,18 +956,27 @@ $("tabPlan").addEventListener("click", () => setMode("plan"));
 $("tabShop").addEventListener("click", () => setMode("shop"));
 $("tabEdit").addEventListener("click", () => setMode("edit"));
 $("search").addEventListener("input", render);
+$("fCat").addEventListener("change", (e) => { filterCat = e.target.value; render(); });
+$("fNeeded").addEventListener("change", (e) => { onlyNeeded = e.target.checked; render(); });
+$("fSort").addEventListener("change", (e) => { editSort = e.target.value; render(); });
+$("btnDups").addEventListener("click", () => { showDups = !showDups; render(); });
+$("btnSelAll").addEventListener("click", () => { visibleEditIds.forEach((id) => selected.add(id)); render(); });
+$("bulkMove").addEventListener("click", bulkMove);
+$("bulkDel").addEventListener("click", bulkDelete);
+$("bulkClear").addEventListener("click", () => { selected.clear(); render(); });
 const bulk = (pred, data, msg) => {
   const l = items.filter(pred);
   $("menu").classList.add("hidden");
   // Ingredients that came from a dinner are deleted (not returned to the master list) when removed.
   if (l.length && confirm(msg(l.length))) batchOver(l, (b, it) =>
-    (it.mealId && data.needed === false) ? b.delete(doc(db, "items", it.id)) : b.update(doc(db, "items", it.id), data));
+    (it.mealId && data.needed === false) ? b.delete(doc(db, "items", it.id)) : b.update(doc(db, "items", it.id), data.needed === false ? { ...data, qty: "" } : data));
 };
 // Done shopping: ticked items leave the shopping list (back to the master list, unticked)
 $("finishShop").addEventListener("click", () => bulk((i) => i.needed && i.checked, { needed: false, checked: false }, (n) => `Fjerne ${n} avkryssede varer fra handlelisten?`));
 $("uncheckAll").addEventListener("click", () => bulk((i) => i.needed && i.checked, { checked: false }, (n) => `Fjerne avkryssing på ${n} varer?`));
 $("clearNeeded").addEventListener("click", () => bulk((i) => i.needed, { needed: false, checked: false }, (n) => `Tømme hele handlelisten (${n} varer)?`));
 $("tabMeals").addEventListener("click", () => setMode("meals"));
+$("tabRecipes").addEventListener("click", () => setMode("recipes"));
 $("clearMeals").addEventListener("click", async () => {
   $("menu").classList.add("hidden");
   if (!meals.length || !confirm("Tømme hele ukeplanen? Ingredienser fra middagene fjernes også fra handlelisten.")) return;
