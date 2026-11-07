@@ -63,6 +63,17 @@
   .search{width:100%;margin-top:8px}
   li.need .txt{font-weight:600}
   li.need{background:color-mix(in srgb,var(--accent) 12%,transparent)}
+  .ico{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:6px 10px;font-size:15px;line-height:1}
+  summary .ico{padding:4px 8px}
+  summary .count + .ico{margin-left:4px}
+  li.edit{flex-wrap:wrap;gap:6px}
+  li.edit input.t{flex:1 1 55%;min-width:0;padding:8px 10px}
+  li.edit select{flex:1 1 30%;min-width:0;padding:8px;max-width:11em}
+  li.edit .ico{flex:none}
+  .grouptools{display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--line);align-items:center}
+  .grouptools input{flex:1}
+  form.newgroup{display:flex;gap:8px;margin:16px 0}
+  form.newgroup input{flex:1}
   .hidden{display:none!important}
   .quickadd{display:flex;gap:8px;margin-top:8px}
   .quickadd input{flex:1}
@@ -90,6 +101,7 @@
     <div class="tabs" role="tablist">
       <button id="tabPlan" role="tab">📝 Planlegg</button>
       <button id="tabShop" role="tab">🛒 Handle <span class="badge" id="shopCount">0</span></button>
+      <button id="tabEdit" role="tab">✏️ Rediger</button>
     </div>
     <input type="search" id="search" class="search" placeholder="Søk i alle varer…" autocomplete="off">
     <form class="quickadd" id="quickForm">
@@ -115,7 +127,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/fireba
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut }
   from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-  collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, writeBatch, serverTimestamp }
+  collection, onSnapshot, addDoc, setDoc, updateDoc, deleteDoc, doc, writeBatch, serverTimestamp }
   from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
@@ -127,9 +139,13 @@ const db = initializeFirestore(app, {
 });
 const itemsCol = collection(db, "items");
 
+const catsCol = collection(db, "categories");
 let items = [];
-let unsub = null;
-let categoryOrder = [];
+let cats = [];          // [{id, name, order}] from Firestore
+let unsub = null, unsubCats = null;
+let itemsLoaded = false, catsLoaded = false, pendingRender = false;
+let seedOrder = [];
+const seedOrderReady = fetch("seed.json").then((r) => r.json()).then((s) => { seedOrder = s.map((c) => c.name); }).catch(() => {});
 const openState = JSON.parse(localStorage.getItem("openCats") || "{}");
 $("hideDone").checked = localStorage.getItem("hideDone") === "1";
 
@@ -141,7 +157,8 @@ onAuthStateChanged(auth, (user) => {
     subscribe();
   } else {
     if (unsub) { unsub(); unsub = null; }
-    items = [];
+    if (unsubCats) { unsubCats(); unsubCats = null; }
+    items = []; cats = []; itemsLoaded = catsLoaded = false;
     $("appView").classList.add("hidden");
     $("loginView").classList.remove("hidden");
   }
@@ -161,27 +178,72 @@ $("logout").addEventListener("click", () => signOut(auth));
 // ---------- data ----------
 function subscribe() {
   if (unsub) unsub();
+  if (unsubCats) unsubCats();
   unsub = onSnapshot(itemsCol, { includeMetadataChanges: true }, (snap) => {
     items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    itemsLoaded = true;
     const st = $("status");
     const offline = snap.metadata.fromCache && !navigator.onLine;
     st.textContent = offline ? "frakoblet" : (snap.metadata.hasPendingWrites ? "synker…" : "live");
     st.className = "status " + (offline ? "off" : "on");
-    render();
+    ensureCategories();
+    safeRender();
   }, (err) => {
     $("status").textContent = "ingen tilgang";
     $("status").className = "status off";
     console.error(err);
   });
+  unsubCats = onSnapshot(catsCol, (snap) => {
+    cats = snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    catsLoaded = true;
+    ensureCategories();
+    safeRender();
+  }, (err) => {
+    $("status").textContent = "ingen tilgang (publiser nye regler?)";
+    $("status").className = "status off";
+    console.error(err);
+  });
 }
 
-async function addItem(text, category) {
+// Don't rebuild the page under someone who is typing in the edit view.
+function safeRender() {
+  const a = document.activeElement;
+  if (mode === "edit" && a && a.tagName === "INPUT" && a.type === "text" && $("list").contains(a)) { pendingRender = true; return; }
+  render();
+}
+document.addEventListener("focusout", () => { if (pendingRender) { pendingRender = false; setTimeout(render, 50); } });
+
+const slug = (s) => s.toLowerCase().replace(/[^a-z0-9æøå]+/g, "-").replace(/^-|-$/g, "") || "gruppe";
+let ensuring = false;
+// First run after upgrade: create the group list from seed order + any categories used by items.
+async function ensureCategories() {
+  if (ensuring || !itemsLoaded || !catsLoaded || cats.length || !items.length) return;
+  ensuring = true;
+  try {
+    await seedOrderReady;
+    const names = [...seedOrder];
+    items.forEach((i) => { if (i.category && !names.includes(i.category)) names.push(i.category); });
+    await batchOver(names, (b, n) => {
+      const id = slug(n);
+      b.set(doc(catsCol, id), { name: n, order: names.indexOf(n) });
+    });
+  } catch (e) { console.error(e); } finally { ensuring = false; }
+}
+
+// Group names in display order (unknown item categories are appended)
+function groupNames() {
+  const names = cats.map((c) => c.name);
+  items.forEach((i) => { if (i.category && !names.includes(i.category)) names.push(i.category); });
+  return names;
+}
+
+async function addItem(text, category, needed = true) {
   text = text.trim();
   if (!text) return;
   const inCat = items.filter((i) => i.category === category);
   const order = inCat.length ? Math.max(...inCat.map((i) => i.order ?? 0)) + 1 : 0;
   await addDoc(itemsCol, {
-    text, category, needed: true, checked: false, order,
+    text, category, needed, checked: false, order,
     addedBy: (auth.currentUser?.email || "").split("@")[0],
     createdAt: serverTimestamp()
   });
@@ -202,35 +264,33 @@ async function batchOver(list, fn) {
 }
 
 // ---------- render ----------
-let mode = localStorage.getItem("mode") === "shop" ? "shop" : "plan";
+let mode = ["shop", "edit"].includes(localStorage.getItem("mode")) ? localStorage.getItem("mode") : "plan";
+
+const cmpItems = (a, b) => ((a.order ?? 0) - (b.order ?? 0)) || a.text.localeCompare(b.text, "nb");
 
 function render() {
-  const shop = mode === "shop";
+  const shop = mode === "shop", edit = mode === "edit";
   const q = $("search").value.trim().toLocaleLowerCase("nb");
   const hide = shop && $("hideDone").checked;
-  const cmp = (a, b) => ((a.order ?? 0) - (b.order ?? 0)) || a.text.localeCompare(b.text, "nb");
 
-  const byCat = new Map();
-  categoryOrder.forEach((c) => byCat.set(c, []));
-  items.forEach((it) => {
-    if (!byCat.has(it.category)) byCat.set(it.category, []);
-    byCat.get(it.category).push(it);
-  });
-  const cats = [...byCat.keys()];
+  const names = groupNames();
+  const byCat = new Map(names.map((n) => [n, []]));
+  items.forEach((it) => byCat.get(it.category)?.push(it));
 
   const neededCount = items.filter((i) => i.needed).length;
   $("shopCount").textContent = neededCount;
-  $("tabPlan").classList.toggle("active", !shop);
+  $("tabPlan").classList.toggle("active", mode === "plan");
   $("tabShop").classList.toggle("active", shop);
+  $("tabEdit").classList.toggle("active", edit);
   $("search").classList.toggle("hidden", shop);
-  $("quickForm").classList.toggle("hidden", shop);
+  $("quickForm").classList.toggle("hidden", shop || edit);
   $("hideDoneLbl").classList.toggle("hidden", !shop);
   $("finishShop").classList.toggle("hidden", !shop);
   $("uncheckAll").classList.toggle("hidden", !shop);
 
   const sel = $("quickCat"); const keep = sel.value;
-  sel.innerHTML = cats.map((c) => `<option>${esc(c)}</option>`).join("");
-  if (cats.includes(keep)) sel.value = keep;
+  sel.innerHTML = names.map((c) => `<option>${esc(c)}</option>`).join("");
+  if (names.includes(keep)) sel.value = keep;
 
   $("seedBtn").classList.toggle("hidden", items.length > 0);
   const empty = $("empty");
@@ -241,48 +301,154 @@ function render() {
 
   const root = $("list");
   root.innerHTML = "";
-  for (const cat of cats) {
-    let list = byCat.get(cat);
-    const need = list.filter((i) => i.needed).length;
+  names.forEach((cat, gi) => {
+    const all = byCat.get(cat);
+    let list = all.slice();
+    const need = all.filter((i) => i.needed).length;
     if (shop) list = list.filter((i) => i.needed);
     else if (q) list = list.filter((i) => i.text.toLocaleLowerCase("nb").includes(q));
     if (hide) list = list.filter((i) => !i.checked);
-    if (!list.length && (shop || q)) continue;
-    list.sort(shop ? (a, b) => (!!a.checked - !!b.checked) || cmp(a, b) : cmp);
+    if (!list.length && (shop || (q && !edit))) return;
+    if (!list.length && edit && q) return;
+    list.sort(shop ? (a, b) => (!!a.checked - !!b.checked) || cmpItems(a, b) : cmpItems);
 
-    const key = (shop ? "s:" : "p:") + cat;
+    const key = (shop ? "s:" : edit ? "e:" : "p:") + cat;
     const d = document.createElement("details");
-    d.open = q ? true : (openState[key] ?? true);
+    d.open = q ? true : (openState[key] ?? !edit);
     d.addEventListener("toggle", () => { if (q) return; openState[key] = d.open; localStorage.setItem("openCats", JSON.stringify(openState)); });
-    const count = shop ? `${byCat.get(cat).filter((i) => i.needed && !i.checked).length} igjen` : (need ? `${need} valgt` : "");
-    d.innerHTML = `<summary>${esc(cat)}<span class="count">${count}</span></summary>`;
-    const ul = document.createElement("ul");
-    for (const it of list) {
-      const li = document.createElement("li");
-      const on = shop ? it.checked : it.needed;
-      li.className = shop ? (it.checked ? "done" : "") : (it.needed ? "need" : "");
-      li.innerHTML = `<input type="checkbox" ${on ? "checked" : ""} aria-label="${shop ? "I handlekurven" : "Trenger"}">
-        <span class="txt">${esc(it.text)}</span>
-        <button class="x" aria-label="${shop ? "Fjern fra handlelisten" : "Slett vare"}">✕</button>`;
-      const act = () => (shop ? toggleChecked(it) : toggleNeeded(it));
-      li.querySelector("input").addEventListener("change", act);
-      li.querySelector(".txt").addEventListener("click", act);
-      li.querySelector(".x").addEventListener("click", () => {
-        if (shop) upd(it, { needed: false, checked: false });
-        else if (confirm(`Slette «${it.text}» fra varelisten for godt?`)) remove(it);
-      });
-      ul.appendChild(li);
+    const count = shop ? `${all.filter((i) => i.needed && !i.checked).length} igjen` : edit ? `${all.length}` : (need ? `${need} valgt` : "");
+    const sum = document.createElement("summary");
+    sum.innerHTML = `${esc(cat)}<span class="count">${count}</span>`;
+    if (edit) {
+      for (const [label, dir] of [["▲", -1], ["▼", 1]]) {
+        const b = document.createElement("button");
+        b.type = "button"; b.className = "ico"; b.textContent = label;
+        b.setAttribute("aria-label", dir < 0 ? "Flytt gruppe opp" : "Flytt gruppe ned");
+        b.disabled = (dir < 0 && gi === 0) || (dir > 0 && gi === names.length - 1);
+        b.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); moveGroup(names, gi, dir); });
+        sum.appendChild(b);
+      }
     }
+    d.appendChild(sum);
+
+    if (edit) {
+      // group tools: rename + delete
+      const gt = document.createElement("div");
+      gt.className = "grouptools";
+      gt.innerHTML = `<input type="text" value="${esc(cat)}" aria-label="Gruppenavn"><button class="ico" type="button" aria-label="Slett gruppe">🗑</button>`;
+      const nameInp = gt.querySelector("input");
+      nameInp.addEventListener("change", () => renameGroup(cat, nameInp.value));
+      gt.querySelector("button").addEventListener("click", () => deleteGroup(cat, all.length));
+      d.appendChild(gt);
+    }
+
+    const ul = document.createElement("ul");
+    list.forEach((it, idx) => {
+      const li = document.createElement("li");
+      if (edit) {
+        li.className = "edit";
+        li.innerHTML = `<input class="t" type="text" value="${esc(it.text)}" aria-label="Varenavn">
+          <select aria-label="Flytt til gruppe">${names.map((n) => `<option ${n === cat ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>
+          <button class="ico" type="button" aria-label="Opp">▲</button>
+          <button class="ico" type="button" aria-label="Ned">▼</button>
+          <button class="ico" type="button" aria-label="Slett">✕</button>`;
+        const [up, down, del] = li.querySelectorAll("button");
+        up.disabled = !!q || idx === 0;
+        down.disabled = !!q || idx === list.length - 1;
+        const inp = li.querySelector("input");
+        inp.addEventListener("change", () => { const t = inp.value.trim(); if (t && t !== it.text) upd(it, { text: t }); else inp.value = it.text; });
+        li.querySelector("select").addEventListener("change", (e) => moveItemToGroup(it, e.target.value));
+        up.addEventListener("click", () => moveItem(list, idx, -1));
+        down.addEventListener("click", () => moveItem(list, idx, 1));
+        del.addEventListener("click", () => { if (confirm(`Slette «${it.text}» for godt?`)) remove(it); });
+      } else {
+        const on = shop ? it.checked : it.needed;
+        li.className = shop ? (it.checked ? "done" : "") : (it.needed ? "need" : "");
+        li.innerHTML = `<input type="checkbox" ${on ? "checked" : ""} aria-label="${shop ? "I handlekurven" : "Trenger"}">
+          <span class="txt">${esc(it.text)}</span>
+          <button class="x" aria-label="${shop ? "Fjern fra handlelisten" : "Slett vare"}">✕</button>`;
+        const act = () => (shop ? toggleChecked(it) : toggleNeeded(it));
+        li.querySelector("input").addEventListener("change", act);
+        li.querySelector(".txt").addEventListener("click", act);
+        li.querySelector(".x").addEventListener("click", () => {
+          if (shop) upd(it, { needed: false, checked: false });
+          else if (confirm(`Slette «${it.text}» fra varelisten for godt?`)) remove(it);
+        });
+      }
+      ul.appendChild(li);
+    });
     d.appendChild(ul);
     if (!shop) {
       const f = document.createElement("form");
       f.className = "add";
       f.innerHTML = `<input type="text" placeholder="Ny vare i ${esc(cat)}…" autocomplete="off"><button type="submit">+</button>`;
-      f.addEventListener("submit", (e) => { e.preventDefault(); const inp = f.querySelector("input"); addItem(inp.value, cat); inp.value = ""; });
+      f.addEventListener("submit", (e) => { e.preventDefault(); const inp = f.querySelector("input"); addItem(inp.value, cat, !edit); inp.value = ""; });
       d.appendChild(f);
     }
     root.appendChild(d);
+  });
+
+  if (edit && !q) {
+    const f = document.createElement("form");
+    f.className = "newgroup";
+    f.innerHTML = `<input type="text" placeholder="Ny gruppe…" autocomplete="off"><button class="primary" type="submit">Legg til gruppe</button>`;
+    f.addEventListener("submit", (e) => { e.preventDefault(); const inp = f.querySelector("input"); addGroup(inp.value); inp.value = ""; });
+    root.appendChild(f);
   }
+}
+
+// ---------- edit operations ----------
+// Persist a full group order (rewrites order 0..n so there are never ties)
+async function saveGroupOrder(names) {
+  const known = new Map(cats.map((c) => [c.name, c.id]));
+  await batchOver(names, (b, n) => {
+    const id = known.get(n) || slug(n);
+    b.set(doc(catsCol, id), { name: n, order: names.indexOf(n) });
+  });
+}
+async function moveGroup(names, i, dir) {
+  const j = i + dir;
+  if (j < 0 || j >= names.length) return;
+  const next = names.slice();
+  [next[i], next[j]] = [next[j], next[i]];
+  await saveGroupOrder(next);
+}
+async function addGroup(name) {
+  name = name.trim();
+  if (!name) return;
+  if (groupNames().some((n) => n.toLocaleLowerCase("nb") === name.toLocaleLowerCase("nb"))) { alert("Det finnes allerede en gruppe med det navnet."); return; }
+  await saveGroupOrder([...groupNames(), name]);
+}
+async function renameGroup(oldName, newName) {
+  newName = newName.trim();
+  if (!newName || newName === oldName) { render(); return; }
+  if (groupNames().some((n) => n !== oldName && n.toLocaleLowerCase("nb") === newName.toLocaleLowerCase("nb"))) { alert("Det finnes allerede en gruppe med det navnet."); render(); return; }
+  const c = cats.find((x) => x.name === oldName);
+  const affected = items.filter((i) => i.category === oldName);
+  const b = writeBatch(db);
+  b.set(doc(catsCol, c?.id || slug(newName)), { name: newName, order: groupNames().indexOf(oldName) });
+  affected.slice(0, 450).forEach((it) => b.update(doc(db, "items", it.id), { category: newName }));
+  await b.commit();
+}
+async function deleteGroup(name, count) {
+  if (count > 0) { alert(`«${name}» har ${count} varer. Flytt eller slett dem først.`); return; }
+  if (!confirm(`Slette gruppen «${name}»?`)) return;
+  const c = cats.find((x) => x.name === name);
+  if (c) await deleteDoc(doc(catsCol, c.id));
+}
+// Items: rewrite order 0..n for a group's list so swaps are stable
+async function moveItem(list, i, dir) {
+  const j = i + dir;
+  if (j < 0 || j >= list.length) return;
+  const next = list.slice();
+  [next[i], next[j]] = [next[j], next[i]];
+  await batchOver(next, (b, it) => { const o = next.indexOf(it); if (it.order !== o) b.update(doc(db, "items", it.id), { order: o }); });
+}
+async function moveItemToGroup(it, group) {
+  if (group === it.category) return;
+  const inTarget = items.filter((i) => i.category === group);
+  const order = inTarget.length ? Math.max(...inTarget.map((i) => i.order ?? 0)) + 1 : 0;
+  await upd(it, { category: group, order });
 }
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -297,6 +463,7 @@ $("hideDone").addEventListener("change", () => { localStorage.setItem("hideDone"
 const setMode = (m) => { mode = m; localStorage.setItem("mode", m); window.scrollTo(0, 0); render(); };
 $("tabPlan").addEventListener("click", () => setMode("plan"));
 $("tabShop").addEventListener("click", () => setMode("shop"));
+$("tabEdit").addEventListener("click", () => setMode("edit"));
 $("search").addEventListener("input", render);
 const bulk = (pred, data, msg) => {
   const l = items.filter(pred);
@@ -314,9 +481,6 @@ $("seedBtn").addEventListener("click", async () => {
   seed.forEach((c) => c.items.forEach((it, i) => rows.push({ text: it.text, category: c.name, needed: false, checked: false, order: i })));
   await batchOver(rows, (b, r) => b.set(doc(itemsCol), { ...r, addedBy: "import", createdAt: serverTimestamp() }));
 });
-
-// Keep the category order from the seed file for empty/new categories
-fetch("seed.json").then((r) => r.json()).then((s) => { categoryOrder = s.map((c) => c.name); render(); }).catch(() => {});
 
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 </script>
