@@ -193,9 +193,11 @@ function subscribe() {
     $("status").className = "status off";
     console.error(err);
   });
-  unsubCats = onSnapshot(catsCol, (snap) => {
+  unsubCats = onSnapshot(catsCol, { includeMetadataChanges: true }, (snap) => {
     cats = snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-    catsLoaded = true;
+    // Only trust "no groups yet" once the server has answered; an empty cache must not
+    // trigger the first-run setup (it would overwrite a saved order with the seed order).
+    catsLoaded = !snap.metadata.fromCache;
     ensureCategories();
     safeRender();
   }, (err) => {
@@ -204,6 +206,12 @@ function subscribe() {
     console.error(err);
   });
 }
+
+// Make failed writes visible (e.g. rules not published) instead of silently reverting.
+window.addEventListener("unhandledrejection", (e) => {
+  console.error(e.reason);
+  alert("Kunne ikke lagre: " + (e.reason?.code || e.reason?.message || e.reason));
+});
 
 // Don't rebuild the page under someone who is typing in the edit view.
 function safeRender() {
@@ -407,6 +415,8 @@ async function saveGroupOrder(names) {
   });
 }
 async function moveGroup(names, i, dir) {
+  document.activeElement?.blur?.(); // so the page can redraw even if a text field had focus
+  pendingRender = false;
   const j = i + dir;
   if (j < 0 || j >= names.length) return;
   const next = names.slice();
