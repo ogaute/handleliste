@@ -166,7 +166,6 @@
   <div class="login">
     <h1>🛒 Handleliste</h1>
     <button class="primary" type="button" id="googleBtn">Logg inn med Google</button>
-    <button type="button" id="yahooBtn">Logg inn med Yahoo</button>
     <div class="err" id="loginErr"></div>
     <details id="emailLogin">
       <summary>Logg inn med e-post og passord</summary>
@@ -235,7 +234,7 @@
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
-import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, GoogleAuthProvider, OAuthProvider, signInWithPopup }
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, GoogleAuthProvider, signInWithPopup }
   from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
   collection, onSnapshot, addDoc, setDoc, updateDoc, deleteDoc, doc, writeBatch, serverTimestamp }
@@ -292,7 +291,7 @@ $("loginForm").addEventListener("submit", async (e) => {
     $("loginErr").textContent = "Feil e-post eller passord.";
   }
 });
-// Google/Yahoo sign-in: they handle 2FA (if enabled on the account); Firestore rules still limit access to the two e-mails.
+// Google sign-in: Google handles 2FA (if enabled on the account); Firestore rules still limit access to the two e-mails.
 async function providerLogin(provider) {
   $("loginErr").textContent = "";
   try {
@@ -309,7 +308,6 @@ async function providerLogin(provider) {
   }
 }
 $("googleBtn").addEventListener("click", () => providerLogin(new GoogleAuthProvider()));
-$("yahooBtn").addEventListener("click", () => providerLogin(new OAuthProvider("yahoo.com")));
 $("logout").addEventListener("click", () => signOut(auth));
 
 // ---------- data ----------

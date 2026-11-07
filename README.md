@@ -28,14 +28,13 @@ python hent_oppskrift.py https://www.matprat.no/oppskrifter/gjester/pasta-bologn
 Resultatet kopieres til utklippstavlen. I appen: **Middager → 📥 Importer**, lim inn, kontroller ingrediensene
 (velg kategori for varer som ikke finnes fra før) og lagre. Virker på sider med strukturerte data (schema.org/Recipe).
 
-## Innlogging med Google / Yahoo (2FA)
+## Innlogging med Google (2FA)
 
-Appen støtter «Logg inn med Google» og «Logg inn med Yahoo». 2FA håndteres av Google/Yahoo (slå det på på selve kontoen).
+Appen støtter «Logg inn med Google». 2FA håndteres av Google (slå det på på selve kontoen).
 Firestore-reglene sjekker fortsatt at e-postadressen er en av de to i `firestore.rules`.
 
 Firebase-konsollen → Authentication → Sign-in method:
 - **Google**: slå på, velg support-e-post, lagre.
-- **Yahoo**: slå på. Krever en Yahoo-app (developer.yahoo.com → opprett app, redirect-URI vises i Firebase) og at du limer inn Client ID og Client Secret.
 - Authorized domains skal inneholde `ogaute.github.io`.
 
-Når begge fungerer kan du slå av **Email/Password** der, så passord-innlogging ikke lenger er mulig.
+Når Google-innlogging fungerer for begge kan du slå av **Email/Password** der, så passord-innlogging ikke lenger er mulig.
