@@ -56,7 +56,7 @@
   .err{color:var(--danger);font-size:14px;min-height:1.2em}
   .empty{text-align:center;color:var(--muted);margin:40px 0}
   .tabs{display:flex;gap:6px;margin-top:8px}
-  .tabs button{flex:1;padding:10px;font-weight:600}
+  .tabs button{flex:1;padding:10px 4px;font-weight:600;font-size:14px}
   .tabs button.active{background:var(--accent);color:var(--accent-text);border-color:var(--accent)}
   .badge{display:inline-block;min-width:20px;padding:0 6px;border-radius:10px;background:var(--line);color:var(--text);font-size:12px;font-weight:600}
   .tabs button.active .badge{background:rgba(255,255,255,.3);color:inherit}
@@ -75,6 +75,18 @@
   form.newgroup{display:flex;gap:8px;margin:16px 0}
   form.newgroup input{flex:1}
   .hidden{display:none!important}
+  .picker{padding:10px 14px;border-top:1px solid var(--line)}
+  .picker input{width:100%}
+  .sugg{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+  .sugg button{text-align:left}
+  .sugg .cat{color:var(--muted);font-size:13px;margin-left:4px}
+  .sugg .newrow{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:14px}
+  .sugg .newrow select{flex:1;min-width:8em;padding:8px}
+  .meal-name{display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--line)}
+  .meal-name input{flex:1;font-weight:600}
+  .meal-actions{padding:10px 14px;border-top:1px solid var(--line);display:flex;gap:8px;flex-wrap:wrap}
+  .meal-actions button{flex:1}
+  li .sub{display:block;font-size:12px;color:var(--muted);font-weight:400}
   .quickadd{display:flex;gap:8px;margin-top:8px}
   .quickadd input{flex:1}
 </style>
@@ -100,6 +112,7 @@
     </div>
     <div class="tabs" role="tablist">
       <button id="tabPlan" role="tab">📝 Planlegg</button>
+      <button id="tabMeals" role="tab">🍽 Middag</button>
       <button id="tabShop" role="tab">🛒 Handle <span class="badge" id="shopCount">0</span></button>
       <button id="tabEdit" role="tab">✏️ Rediger</button>
     </div>
@@ -114,6 +127,7 @@
       <button id="finishShop">Ferdig handlet</button>
       <button id="uncheckAll">Fjern avkryssing</button>
       <button id="clearNeeded">Tøm handlelisten</button>
+      <button id="clearMeals">Tøm ukeplanen</button>
       <button id="seedBtn" class="hidden">Last inn startliste</button>
       <button id="logout">Logg ut</button>
     </div>
@@ -140,9 +154,11 @@ const db = initializeFirestore(app, {
 const itemsCol = collection(db, "items");
 
 const catsCol = collection(db, "categories");
+const mealsCol = collection(db, "meals");
 let items = [];
 let cats = [];          // [{id, name, order}] from Firestore
-let unsub = null, unsubCats = null;
+let meals = [];         // [{id, day 0-6, name, ingredients[], planned}]
+let unsub = null, unsubCats = null, unsubMeals = null;
 let itemsLoaded = false, catsLoaded = false, pendingRender = false;
 let seedOrder = [];
 const seedOrderReady = fetch("seed.json").then((r) => r.json()).then((s) => { seedOrder = s.map((c) => c.name); }).catch(() => {});
@@ -158,7 +174,8 @@ onAuthStateChanged(auth, (user) => {
   } else {
     if (unsub) { unsub(); unsub = null; }
     if (unsubCats) { unsubCats(); unsubCats = null; }
-    items = []; cats = []; itemsLoaded = catsLoaded = false;
+    if (unsubMeals) { unsubMeals(); unsubMeals = null; }
+    items = []; cats = []; meals = []; itemsLoaded = catsLoaded = false;
     $("appView").classList.add("hidden");
     $("loginView").classList.remove("hidden");
   }
@@ -179,6 +196,11 @@ $("logout").addEventListener("click", () => signOut(auth));
 function subscribe() {
   if (unsub) unsub();
   if (unsubCats) unsubCats();
+  if (unsubMeals) unsubMeals();
+  unsubMeals = onSnapshot(mealsCol, (snap) => {
+    meals = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    safeRender();
+  }, (err) => { console.error(err); alert("Ingen tilgang til middagsplanen – publiser oppdaterte regler (firestore.rules)."); });
   unsub = onSnapshot(itemsCol, { includeMetadataChanges: true }, (snap) => {
     items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     itemsLoaded = true;
@@ -216,7 +238,7 @@ window.addEventListener("unhandledrejection", (e) => {
 // Don't rebuild the page under someone who is typing in the edit view.
 function safeRender() {
   const a = document.activeElement;
-  if (mode === "edit" && a && a.tagName === "INPUT" && a.type === "text" && $("list").contains(a)) { pendingRender = true; return; }
+  if ((mode === "edit" || mode === "meals") && a && a.tagName === "INPUT" && (a.type === "text" || a.type === "search") && $("list").contains(a)) { pendingRender = true; return; }
   render();
 }
 document.addEventListener("focusout", () => { if (pendingRender) { pendingRender = false; setTimeout(render, 50); } });
@@ -272,9 +294,10 @@ async function batchOver(list, fn) {
 }
 
 // ---------- render ----------
-let mode = ["shop", "edit"].includes(localStorage.getItem("mode")) ? localStorage.getItem("mode") : "plan";
+let mode = ["shop", "edit", "meals"].includes(localStorage.getItem("mode")) ? localStorage.getItem("mode") : "plan";
 
-const cmpItems = (a, b) => ((a.order ?? 0) - (b.order ?? 0)) || a.text.localeCompare(b.text, "nb");
+// Same order+text => duplicates (e.g. the same ingredient for two dinners) end up directly under each other.
+const cmpItems = (a, b) => ((a.order ?? 0) - (b.order ?? 0)) || a.text.localeCompare(b.text, "nb") || ((a.day ?? 0) - (b.day ?? 0));
 
 function render() {
   const shop = mode === "shop", edit = mode === "edit";
@@ -283,18 +306,24 @@ function render() {
 
   const names = groupNames();
   const byCat = new Map(names.map((n) => [n, []]));
-  items.forEach((it) => byCat.get(it.category)?.push(it));
+  items.forEach((it) => { if (it.mealId) { if (shop) byCat.get(it.mealCategory)?.push(it); } else byCat.get(it.category)?.push(it); });
 
   const neededCount = items.filter((i) => i.needed).length;
   $("shopCount").textContent = neededCount;
   $("tabPlan").classList.toggle("active", mode === "plan");
   $("tabShop").classList.toggle("active", shop);
   $("tabEdit").classList.toggle("active", edit);
-  $("search").classList.toggle("hidden", shop);
-  $("quickForm").classList.toggle("hidden", shop || edit);
+  const mealsMode = mode === "meals";
+  $("tabMeals").classList.toggle("active", mealsMode);
+  $("clearMeals").classList.toggle("hidden", !mealsMode);
+  $("clearNeeded").classList.toggle("hidden", mealsMode);
+  $("search").classList.toggle("hidden", shop || mealsMode);
+  $("quickForm").classList.toggle("hidden", shop || edit || mealsMode);
   $("hideDoneLbl").classList.toggle("hidden", !shop);
   $("finishShop").classList.toggle("hidden", !shop);
   $("uncheckAll").classList.toggle("hidden", !shop);
+
+  if (mealsMode) { $("empty").classList.add("hidden"); $("seedBtn").classList.add("hidden"); renderMeals(); return; }
 
   const sel = $("quickCat"); const keep = sel.value;
   sel.innerHTML = names.map((c) => `<option>${esc(c)}</option>`).join("");
@@ -373,13 +402,13 @@ function render() {
         const on = shop ? it.checked : it.needed;
         li.className = shop ? (it.checked ? "done" : "") : (it.needed ? "need" : "");
         li.innerHTML = `<input type="checkbox" ${on ? "checked" : ""} aria-label="${shop ? "I handlekurven" : "Trenger"}">
-          <span class="txt">${esc(it.text)}</span>
+          <span class="txt">${esc(it.text)}${it.mealId ? `<span class="sub">${esc(DAYS[it.day] ?? "")} · ${esc(it.mealName || "")}</span>` : ""}</span>
           <button class="x" aria-label="${shop ? "Fjern fra handlelisten" : "Slett vare"}">✕</button>`;
         const act = () => (shop ? toggleChecked(it) : toggleNeeded(it));
         li.querySelector("input").addEventListener("change", act);
         li.querySelector(".txt").addEventListener("click", act);
         li.querySelector(".x").addEventListener("click", () => {
-          if (shop) upd(it, { needed: false, checked: false });
+          if (shop) { if (it.mealId) remove(it); else upd(it, { needed: false, checked: false }); }
           else if (confirm(`Slette «${it.text}» fra varelisten for godt?`)) remove(it);
         });
       }
@@ -403,6 +432,145 @@ function render() {
     f.addEventListener("submit", (e) => { e.preventDefault(); const inp = f.querySelector("input"); addGroup(inp.value); inp.value = ""; });
     root.appendChild(f);
   }
+}
+
+// ---------- dinner planner ----------
+const DAYS = ["Mandag", "Tirsdag", "Onsdag", "Torsdag", "Fredag", "Lørdag", "Søndag"];
+const mealRef = (day) => doc(db, "meals", "dag-" + day);
+// Ingredients are {text, category}; tolerate plain strings.
+const mealIngredients = (m) => (m.ingredients || []).map((x) => typeof x === "string" ? { text: x, category: groupNames()[0] } : x).filter((x) => x.text);
+const mealItems = (m) => items.filter((i) => i.mealId === m.id);
+
+async function saveMealName(day, name, m) {
+  name = name.trim();
+  if (!name) return;
+  if (!m) { await setDoc(mealRef(day), { day, name, ingredients: [], planned: false }); return; }
+  if (name === m.name) return;
+  const b = writeBatch(db);
+  b.update(mealRef(day), { name });
+  mealItems(m).forEach((i) => b.update(doc(db, "items", i.id), { mealName: name }));
+  await b.commit();
+}
+const setIngredients = (m, list) => updateDoc(mealRef(m.day), { ingredients: list });
+async function deleteMeal(m) {
+  if (!confirm(`Slette «${m.name}» fra ${DAYS[m.day].toLowerCase()}en?`)) return;
+  const b = writeBatch(db);
+  b.delete(mealRef(m.day));
+  mealItems(m).forEach((i) => b.delete(doc(db, "items", i.id)));
+  await b.commit();
+}
+// Done planning: every ingredient becomes its own shopping-list row (duplicates across dinners are kept).
+async function finishMeal(m) {
+  const list = mealIngredients(m);
+  const b = writeBatch(db);
+  const who = (auth.currentUser?.email || "").split("@")[0];
+  list.forEach((ing) => {
+    const master = items.find((i) => !i.mealId && i.category === ing.category && i.text === ing.text);
+    b.set(doc(itemsCol), {
+      text: ing.text, category: null, mealCategory: ing.category, mealId: m.id, mealName: m.name, day: m.day,
+      needed: true, checked: false, order: master?.order ?? 0, addedBy: who, createdAt: serverTimestamp()
+    });
+  });
+  b.update(mealRef(m.day), { planned: true });
+  await b.commit();
+}
+async function reopenMeal(m) {
+  const mine = mealItems(m);
+  if (mine.length && !confirm(`Fjerne ${mine.length} ingredienser fra handlelisten og redigere «${m.name}»?`)) return;
+  const b = writeBatch(db);
+  mine.forEach((i) => b.delete(doc(db, "items", i.id)));
+  b.update(mealRef(m.day), { planned: false });
+  await b.commit();
+}
+
+// Search the existing item list (from the Planlegg tab) or create a new item in a chosen category.
+function ingredientPicker(m, ing) {
+  const wrap = document.createElement("div");
+  wrap.className = "picker";
+  const names = groupNames();
+  wrap.innerHTML = `<input type="search" placeholder="Søk etter vare eller skriv ny…" autocomplete="off"><div class="sugg"></div>`;
+  const inp = wrap.querySelector("input"), box = wrap.querySelector(".sugg");
+  const has = (text, cat) => ing.some((x) => x.text.toLocaleLowerCase("nb") === text.toLocaleLowerCase("nb") && x.category === cat);
+  const add = async (text, cat, isNew) => {
+    if (isNew) await addItem(text, cat, false);   // becomes a permanent item, not on the shopping list yet
+    await setIngredients(m, [...ing, { text, category: cat }]);
+  };
+  const refresh = () => {
+    const q = inp.value.trim(), ql = q.toLocaleLowerCase("nb");
+    box.innerHTML = "";
+    if (!q) return;
+    const hits = items.filter((i) => !i.mealId && i.category && i.text.toLocaleLowerCase("nb").includes(ql) && !has(i.text, i.category))
+      .sort((a, b) => a.text.localeCompare(b.text, "nb")).slice(0, 8);
+    hits.forEach((i) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.innerHTML = `${esc(i.text)} <span class="cat">[${esc(i.category)}]</span>`;
+      b.addEventListener("click", () => add(i.text, i.category, false));
+      box.appendChild(b);
+    });
+    if (!items.some((i) => !i.mealId && i.text.toLocaleLowerCase("nb") === ql)) {
+      const row = document.createElement("div");
+      row.className = "newrow";
+      row.innerHTML = `<span>Ny vare «${esc(q)}» i:</span><select aria-label="Kategori">${names.map((n) => `<option>${esc(n)}</option>`).join("")}</select><button type="button" class="primary">Legg til</button>`;
+      const sel = row.querySelector("select");
+      const last = localStorage.getItem("lastNewCat");
+      if (names.includes(last)) sel.value = last;
+      row.querySelector("button").addEventListener("click", () => { localStorage.setItem("lastNewCat", sel.value); add(q, sel.value, true); });
+      box.appendChild(row);
+    }
+  };
+  inp.addEventListener("input", refresh);
+  return wrap;
+}
+
+function renderMeals() {
+  const root = $("list");
+  root.innerHTML = "";
+  DAYS.forEach((day, dayIdx) => {
+    const m = meals.find((x) => x.day === dayIdx);
+    const d = document.createElement("details");
+    const key = "m:" + dayIdx;
+    d.open = openState[key] ?? true;
+    d.addEventListener("toggle", () => { openState[key] = d.open; localStorage.setItem("openCats", JSON.stringify(openState)); });
+    const sum = document.createElement("summary");
+    sum.innerHTML = `${esc(day)}<span class="count">${m ? esc(m.name) + (m.planned ? " ✓" : "") : ""}</span>`;
+    d.appendChild(sum);
+
+    const nf = document.createElement("form");
+    nf.className = "meal-name";
+    nf.innerHTML = `<input type="text" value="${esc(m?.name || "")}" placeholder="Middag på ${esc(day.toLowerCase())}…" aria-label="Navn på middag" autocomplete="off">` +
+      (m ? `<button class="ico" type="button" aria-label="Slett middag">🗑</button>` : `<button class="primary" type="submit">+</button>`);
+    nf.addEventListener("submit", (e) => { e.preventDefault(); saveMealName(dayIdx, nf.querySelector("input").value, m); });
+    if (m) {
+      nf.querySelector("input").addEventListener("change", (e) => saveMealName(dayIdx, e.target.value, m));
+      nf.querySelector("button").addEventListener("click", () => deleteMeal(m));
+    }
+    d.appendChild(nf);
+
+    if (m) {
+      const ing = mealIngredients(m);
+      const ul = document.createElement("ul");
+      ing.forEach((x, idx) => {
+        const li = document.createElement("li");
+        li.innerHTML = `<span class="txt">${esc(x.text)}<span class="sub">${esc(x.category)}</span></span>` + (m.planned ? "" : `<button class="x" aria-label="Fjern">✕</button>`);
+        if (!m.planned) li.querySelector(".x").addEventListener("click", () => setIngredients(m, ing.filter((_, k) => k !== idx)));
+        ul.appendChild(li);
+      });
+      d.appendChild(ul);
+      if (!m.planned) d.appendChild(ingredientPicker(m, ing));
+      const act = document.createElement("div");
+      act.className = "meal-actions";
+      if (m.planned) {
+        act.innerHTML = `<button type="button">✏️ Rediger på nytt</button>`;
+        act.querySelector("button").addEventListener("click", () => reopenMeal(m));
+      } else {
+        act.innerHTML = `<button class="primary" type="button" ${ing.length ? "" : "disabled"}>✓ Ferdig planlagt – legg i handlelisten</button>`;
+        act.querySelector("button").addEventListener("click", () => finishMeal(m));
+      }
+      d.appendChild(act);
+    }
+    root.appendChild(d);
+  });
 }
 
 // ---------- edit operations ----------
@@ -478,12 +646,22 @@ $("search").addEventListener("input", render);
 const bulk = (pred, data, msg) => {
   const l = items.filter(pred);
   $("menu").classList.add("hidden");
-  if (l.length && confirm(msg(l.length))) batchOver(l, (b, it) => b.update(doc(db, "items", it.id), data));
+  // Ingredients that came from a dinner are deleted (not returned to the master list) when removed.
+  if (l.length && confirm(msg(l.length))) batchOver(l, (b, it) =>
+    (it.mealId && data.needed === false) ? b.delete(doc(db, "items", it.id)) : b.update(doc(db, "items", it.id), data));
 };
 // Done shopping: ticked items leave the shopping list (back to the master list, unticked)
 $("finishShop").addEventListener("click", () => bulk((i) => i.needed && i.checked, { needed: false, checked: false }, (n) => `Fjerne ${n} avkryssede varer fra handlelisten?`));
 $("uncheckAll").addEventListener("click", () => bulk((i) => i.needed && i.checked, { checked: false }, (n) => `Fjerne avkryssing på ${n} varer?`));
 $("clearNeeded").addEventListener("click", () => bulk((i) => i.needed, { needed: false, checked: false }, (n) => `Tømme hele handlelisten (${n} varer)?`));
+$("tabMeals").addEventListener("click", () => setMode("meals"));
+$("clearMeals").addEventListener("click", async () => {
+  $("menu").classList.add("hidden");
+  if (!meals.length || !confirm("Tømme hele ukeplanen? Ingredienser fra middagene fjernes også fra handlelisten.")) return;
+  const refs = meals.map((m) => doc(db, "meals", m.id));
+  items.filter((i) => i.mealId).forEach((i) => refs.push(doc(db, "items", i.id)));
+  await batchOver(refs, (batch, ref) => batch.delete(ref));
+});
 $("seedBtn").addEventListener("click", async () => {
   if (items.length) return;
   const seed = await (await fetch("seed.json")).json();

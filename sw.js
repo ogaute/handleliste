@@ -1,5 +1,5 @@
 // Minimal app-shell cache so the page opens offline. Data offline is handled by Firestore's local cache.
-const CACHE = "handleliste-v1";
+const CACHE = "handleliste-v2";
 const SHELL = ["./", "index.html", "firebase-config.js", "seed.json", "manifest.webmanifest", "icon.svg"];
 
 self.addEventListener("install", (e) => {
@@ -13,7 +13,7 @@ self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET" || url.origin !== location.origin) return;
   e.respondWith(
-    fetch(e.request).then((r) => {
+    fetch(e.request, { cache: "reload" }).then((r) => {
       const copy = r.clone();
       caches.open(CACHE).then((c) => c.put(e.request, copy));
       return r;
