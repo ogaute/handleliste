@@ -82,6 +82,7 @@
   form.newgroup{display:flex;gap:8px;margin:16px 0}
   form.newgroup input{flex:1}
   .hidden{display:none!important}
+  .toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--accent);color:var(--accent-text);padding:10px 16px;border-radius:12px;font-weight:600;z-index:100;box-shadow:0 4px 16px rgba(0,0,0,.3);max-width:90vw}
   .grip{touch-action:none;cursor:grab;-webkit-user-select:none;user-select:none;border:none;background:none;color:var(--muted);font-size:20px;line-height:1;padding:4px 6px;flex:none}
   .grip:disabled{opacity:.3;cursor:not-allowed}
   .dragging{position:relative;z-index:30;background:var(--card);box-shadow:0 6px 20px rgba(0,0,0,.35);opacity:.97;cursor:grabbing}
@@ -668,6 +669,24 @@ async function finishMeal(m) {
   b.update(mealRef(m.day), { planned: true, recipeId: rid });
   await b.commit();
 }
+// Save only: store/update the dinner in the dinner database (Middager) without touching the shopping list.
+async function saveMealOnly(m) {
+  const list = mealIngredients(m);
+  const ex = recipes.find((r) => r.id === m.recipeId) || recipes.find((r) => normName(r.name) === normName(m.name));
+  const b = writeBatch(db);
+  let rid;
+  if (ex) { rid = ex.id; b.update(recipeRef(rid), { name: m.name, ingredients: list }); }
+  else { const ref = doc(recipesCol); rid = ref.id; b.set(ref, { name: m.name, ingredients: list, recipe: "", createdAt: serverTimestamp() }); }
+  b.update(mealRef(m.day), { recipeId: rid });
+  await b.commit();
+  toast(ex ? `«${m.name}» oppdatert i Middager` : `«${m.name}» lagret i Middager`);
+}
+function toast(msg) {
+  const t = document.createElement("div");
+  t.className = "toast"; t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2200);
+}
 async function reopenMeal(m) {
   const mine = mealItems(m);
   if (mine.length && !confirm(`Fjerne ${mine.length} ingredienser fra handlelisten og redigere «${m.name}»?`)) return;
@@ -989,8 +1008,9 @@ function renderMeals() {
         act.innerHTML = `<button type="button">✏️ Rediger på nytt</button>`;
         act.querySelector("button").addEventListener("click", () => reopenMeal(m));
       } else {
-        act.innerHTML = `<button class="primary" type="button" ${ing.length ? "" : "disabled"}>✓ Ferdig planlagt – legg i handlelisten</button>`;
-        act.querySelector("button").addEventListener("click", () => finishMeal(m));
+        act.innerHTML = `<button class="primary save" type="button">💾 Lagre middag</button><button class="primary done" type="button" ${ing.length ? "" : "disabled"}>💾🛒 Lagre middag og legg i handlekurven</button>`;
+        act.querySelector(".save").addEventListener("click", () => saveMealOnly(m));
+        act.querySelector(".done").addEventListener("click", () => finishMeal(m));
       }
       d.appendChild(act);
     }
