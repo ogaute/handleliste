@@ -1,7 +1,7 @@
 // App-shell cache so the page opens offline. Data offline is handled by Firestore's local cache.
-const CACHE = "handleliste-v3";
-const SHELL = ["./", "index.html", "firebase-config.js", "seed.json", "manifest.webmanifest", "icon.svg", "icon-180.png", "icon-192.png"];
-// The Firebase SDK is loaded from another origin. Keep the version in sync with the imports in index.html.
+const CACHE = "handleliste-v4";
+const SHELL = ["./", "index.html", "app.js", "firebase-config.js", "seed.json", "manifest.webmanifest", "icon.svg", "icon-180.png", "icon-192.png"];
+// The Firebase SDK is loaded from another origin. Keep the version in sync with the imports in app.js.
 const SDK_ORIGIN = "https://www.gstatic.com";
 const SDK = ["app", "auth", "firestore"].map((n) => `${SDK_ORIGIN}/firebasejs/10.14.1/firebase-${n}.js`);
 const NET_TIMEOUT = 2500;   // ms to wait for the network before showing the cached copy

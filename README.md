@@ -44,7 +44,7 @@ e-postadressen for å få tilgang, så ingen kan registrere seg selv med en av d
 
 ## Oppdatere Firebase-SDK
 
-Versjonsnummeret står to steder og må være likt: importene øverst i skriptet i `index.html` og `SDK` i `sw.js`
+Versjonsnummeret står to steder og må være likt: importene øverst i `app.js` og `SDK` i `sw.js`
 (som lagrer SDK-filene slik at appen starter uten nett). Øk også `CACHE` i `sw.js`.
 
 ## Varer fra Rema 1000 (forslag)

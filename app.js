@@ -1,0 +1,1321 @@
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, GoogleAuthProvider, signInWithPopup }
+  from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
+  collection, getDocs, Timestamp, onSnapshot, setDoc, updateDoc, deleteDoc, doc, writeBatch, serverTimestamp }
+  from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { firebaseConfig } from "./firebase-config.js";
+
+const $ = (id) => document.getElementById(id);
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+});
+const itemsCol = collection(db, "items");
+
+const catsCol = collection(db, "categories");
+const mealsCol = collection(db, "meals");
+const recipesCol = collection(db, "recipes");
+const productsCol = collection(db, "products");
+let items = [];
+let products = [];      // bought at Rema (import via hent_rema.py); used for suggestions
+let cats = [];          // [{id, name, order}] from Firestore
+let meals = [];         // [{id, day 0-6, name, ingredients[], planned}]
+const openRecipes = new Set();   // expanded dinners; cleared whenever you leave/enter the tab
+let importDraft = null;   // import panel state: {stage:'paste'|'preview', ...}
+let recipes = [];       // saved dinners: [{id, name, ingredients[], recipe}]
+let unsub = null, unsubCats = null, unsubMeals = null, unsubRecipes = null, unsubProducts = null;
+let itemsLoaded = false, catsLoaded = false, pendingRender = false;
+let itemsSynced = false;   // the server (not just the local cache) has answered for items
+let seedOrder = [];
+const seedOrderReady = fetch("seed.json").then((r) => r.json()).then((s) => { seedOrder = s.map((c) => c.name); }).catch(() => {});
+const openState = JSON.parse(localStorage.getItem("openCats") || "{}");
+$("hideDone").checked = localStorage.getItem("hideDone") === "1";
+
+// ---------- auth ----------
+onAuthStateChanged(auth, (user) => {
+  if (user) {
+    $("loginView").classList.add("hidden");
+    $("appView").classList.remove("hidden");
+    subscribe();
+    syncWakeLock();
+  } else {
+    if (unsub) { unsub(); unsub = null; }
+    if (unsubCats) { unsubCats(); unsubCats = null; }
+    if (unsubMeals) { unsubMeals(); unsubMeals = null; }
+    if (unsubRecipes) { unsubRecipes(); unsubRecipes = null; }
+    if (unsubProducts) { unsubProducts(); unsubProducts = null; }
+    items = []; cats = []; meals = []; recipes = []; itemsLoaded = catsLoaded = itemsSynced = false;
+    $("appView").classList.add("hidden");
+    $("loginView").classList.remove("hidden");
+    syncWakeLock();
+  }
+});
+
+$("loginForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  $("loginErr").textContent = "";
+  try {
+    await signInWithEmailAndPassword(auth, $("email").value.trim(), $("password").value);
+  } catch (err) {
+    $("loginErr").textContent = "Feil e-post eller passord.";
+  }
+});
+// Google sign-in: Google handles 2FA (if enabled on the account); Firestore rules still limit access to the two e-mails.
+async function providerLogin(provider) {
+  $("loginErr").textContent = "";
+  try {
+    await signInWithPopup(auth, provider);
+  } catch (err) {
+    const msgs = {
+      "auth/popup-blocked": "Nettleseren blokkerte innloggingsvinduet. Tillat popup og prøv igjen.",
+      "auth/account-exists-with-different-credential": "Denne e-posten er knyttet til en annen innloggingsmåte. Prøv Google eller e-post.",
+      "auth/unauthorized-domain": "Domenet er ikke godkjent i Firebase (Authentication → Settings → Authorized domains).",
+      "auth/operation-not-allowed": "Denne innloggingsmåten er ikke slått på i Firebase ennå."
+    };
+    if (["auth/popup-closed-by-user", "auth/cancelled-popup-request"].includes(err.code)) return;
+    $("loginErr").textContent = msgs[err.code] || ("Innlogging feilet (" + (err.code || err.message) + ").");
+  }
+}
+$("googleBtn").addEventListener("click", () => providerLogin(new GoogleAuthProvider()));
+$("logout").addEventListener("click", () => signOut(auth));
+
+// ---------- data ----------
+function subscribe() {
+  if (unsub) unsub();
+  if (unsubCats) unsubCats();
+  if (unsubMeals) unsubMeals();
+  if (unsubRecipes) unsubRecipes();
+  if (unsubProducts) unsubProducts();
+  unsubProducts = onSnapshot(productsCol, (snap) => {
+    products = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    updateSuggestions();
+  }, (err) => console.error("products:", err));   // missing rules just means no suggestions
+  unsubRecipes = onSnapshot(recipesCol, (snap) => {
+    recipes = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    safeRender();
+  }, (err) => { console.error(err); alert("Ingen tilgang til middagsdatabasen – publiser oppdaterte regler (firestore.rules)."); });
+  unsubMeals = onSnapshot(mealsCol, (snap) => {
+    meals = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    safeRender();
+  }, (err) => { console.error(err); alert("Ingen tilgang til middagsplanen – publiser oppdaterte regler (firestore.rules)."); });
+  unsub = onSnapshot(itemsCol, { includeMetadataChanges: true }, (snap) => {
+    items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    itemsLoaded = true;
+    if (!snap.metadata.fromCache) itemsSynced = true;
+    const st = $("status");
+    const offline = snap.metadata.fromCache && !navigator.onLine;
+    st.textContent = offline ? "frakoblet" : (snap.metadata.hasPendingWrites ? "synker…" : "live");
+    st.className = "status " + (offline ? "off" : "on");
+    ensureCategories();
+    updateSuggestions();
+    safeRender();
+  }, (err) => {
+    $("status").textContent = "ingen tilgang";
+    $("status").className = "status off";
+    console.error(err);
+  });
+  unsubCats = onSnapshot(catsCol, { includeMetadataChanges: true }, (snap) => {
+    cats = snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    // Only trust "no groups yet" once the server has answered; an empty cache must not
+    // trigger the first-run setup (it would overwrite a saved order with the seed order).
+    catsLoaded = !snap.metadata.fromCache;
+    ensureCategories();
+    safeRender();
+  }, (err) => {
+    $("status").textContent = "ingen tilgang (publiser nye regler?)";
+    $("status").className = "status off";
+    console.error(err);
+  });
+}
+
+// Make failed writes visible (e.g. rules not published) instead of silently reverting.
+window.addEventListener("unhandledrejection", (e) => {
+  console.error(e.reason);
+  alert("Kunne ikke lagre: " + (e.reason?.code || e.reason?.message || e.reason));
+});
+
+// Don't rebuild the page under someone who is typing in the edit view.
+let dragActive = false;
+function safeRender() {
+  if (dragActive) { pendingRender = true; return; }
+  const a = document.activeElement;
+  const typing = a && $("list").contains(a)
+    && ((a.tagName === "INPUT" && (a.type === "text" || a.type === "search")) || a.tagName === "TEXTAREA")
+    && (["edit", "meals", "recipes"].includes(mode) || a.classList.contains("qty") || a.value !== "");
+  if (typing) { pendingRender = true; return; }
+  render();
+}
+document.addEventListener("focusout", () => { if (pendingRender) { pendingRender = false; setTimeout(render, 50); } });
+
+const slug = (s) => s.toLowerCase().replace(/[^a-z0-9æøå]+/g, "-").replace(/^-|-$/g, "") || "gruppe";
+let ensuring = false;
+// First run after upgrade: create the group list from seed order + any categories used by items.
+async function ensureCategories() {
+  if (ensuring || !itemsLoaded || !catsLoaded || cats.length || !items.length) return;
+  ensuring = true;
+  try {
+    await seedOrderReady;
+    const names = [...seedOrder];
+    items.forEach((i) => { if (i.category && !names.includes(i.category)) names.push(i.category); });
+    await batchOver(names, (b, n) => {
+      const id = slug(n);
+      b.set(doc(catsCol, id), { name: n, order: names.indexOf(n) });
+    });
+  } catch (e) { console.error(e); } finally { ensuring = false; }
+}
+
+// Group names in display order (unknown item categories are appended)
+function groupNames() {
+  const names = cats.map((c) => c.name);
+  items.forEach((i) => { const c = i.mealId ? i.mealCategory : i.category; if (c && !names.includes(c)) names.push(c); });
+  return names;
+}
+
+// NB: Firestore write promises only settle once the server has answered, i.e. never while offline.
+// So never `await` a write before doing UI work or the next write. Fire it and let the snapshot
+// listeners redraw. Failures still surface through the unhandledrejection handler above.
+function addItem(text, category, needed = true) {
+  text = text.trim();
+  if (!text) return;
+  const inCat = items.filter((i) => i.category === category);
+  const order = inCat.length ? Math.max(...inCat.map((i) => i.order ?? 0)) + 1 : 0;
+  return setDoc(doc(itemsCol), {
+    text, category, needed, checked: false, order,
+    addedBy: (auth.currentUser?.email || "").split("@")[0],
+    createdAt: serverTimestamp()
+  });
+}
+// needed  = on the shopping list (chosen while planning)
+// checked = in the cart (ticked while shopping; only meaningful when needed)
+const upd = (it, data) => updateDoc(doc(db, "items", it.id), data);
+const toggleNeeded = (it) => upd(it, { needed: !it.needed, checked: false, qty: "" });
+const toggleChecked = (it) => upd(it, { checked: !it.checked });
+const remove = (it) => deleteDoc(doc(db, "items", it.id));
+
+// All chunks are queued at once (see NB above); the returned promise settles when the server has them all.
+function batchOver(list, fn) {
+  const commits = [];
+  for (let i = 0; i < list.length; i += 400) {
+    const b = writeBatch(db);
+    list.slice(i, i + 400).forEach((it) => fn(b, it));
+    commits.push(b.commit());
+  }
+  return Promise.all(commits);
+}
+// Dinners keep their ingredients as {text, category} copies (in meals, recipes and dinner rows on the
+// shopping list). Returns batch operations that rewrite the category wherever fn(ingredient) gives a new one.
+function recatOps(fn) {
+  const ops = [];
+  const remap = (list) => {
+    let hit = false;
+    const out = (list || []).map((x) => {
+      const c = x && typeof x === "object" ? fn(x) : null;
+      if (!c || c === x.category) return x;
+      hit = true;
+      return { ...x, category: c };
+    });
+    return hit ? out : null;
+  };
+  meals.forEach((m) => { const l = remap(m.ingredients); if (l) ops.push((b) => b.update(doc(db, "meals", m.id), { ingredients: l })); });
+  recipes.forEach((r) => { const l = remap(r.ingredients); if (l) ops.push((b) => b.update(doc(db, "recipes", r.id), { ingredients: l })); });
+  items.forEach((i) => {
+    if (!i.mealId) return;
+    const c = fn({ text: i.text, category: i.mealCategory });
+    if (c && c !== i.mealCategory) ops.push((b) => b.update(doc(db, "items", i.id), { mealCategory: c }));
+  });
+  return ops;
+}
+const runOps = (ops) => batchOver(ops, (b, op) => op(b));
+
+// ---------- render ----------
+// edit-view tools
+let editSort = "manual", filterCat = "", onlyNeeded = false, showDups = false;
+const selected = new Set();
+let visibleEditIds = [];
+const tsOf = (i) => i.createdAt?.seconds ?? Infinity;   // pending (not yet synced) writes sort as newest
+const editCmp = (a, b) => editSort === "az" ? a.text.localeCompare(b.text, "nb")
+  : editSort === "new" ? (tsOf(b) - tsOf(a)) || a.text.localeCompare(b.text, "nb") : cmpItems(a, b);
+let mode = ["shop", "edit", "meals", "recipes"].includes(localStorage.getItem("mode")) ? localStorage.getItem("mode") : "plan";
+
+// Same order+text => duplicates (e.g. the same ingredient for two dinners) end up directly under each other.
+const cmpItems = (a, b) => ((a.order ?? 0) - (b.order ?? 0)) || a.text.localeCompare(b.text, "nb") || ((a.day ?? 0) - (b.day ?? 0));
+
+function render() {
+  const shop = mode === "shop", edit = mode === "edit";
+  document.body.dataset.mode = mode;
+  const q = $("search").value.trim().toLocaleLowerCase("nb");
+  const hide = shop && $("hideDone").checked;
+
+  const names = groupNames();
+  const byCat = new Map(names.map((n) => [n, []]));
+  items.forEach((it) => { if (it.mealId) { if (shop) byCat.get(it.mealCategory)?.push(it); } else byCat.get(it.category)?.push(it); });
+
+  const neededCount = items.filter((i) => i.needed).length;
+  $("shopCount").textContent = neededCount;
+  $("tabPlan").classList.toggle("active", mode === "plan");
+  $("tabShop").classList.toggle("active", shop);
+  $("tabEdit").classList.toggle("active", edit);
+  const recMode = mode === "recipes";
+  const mealsMode = mode === "meals";
+  $("tabRecipes").classList.toggle("active", recMode);
+  $("search").placeholder = recMode ? "Søk i middager…" : edit ? "Søk i alle varer…" : "Søk eller legg til vare…";
+  $("tabMeals").classList.toggle("active", mealsMode);
+  $("clearMeals").classList.toggle("hidden", !mealsMode);
+  $("clearNeeded").classList.toggle("hidden", mealsMode || recMode);
+  $("search").classList.toggle("hidden", shop || mealsMode);
+  $("hideDoneLbl").classList.toggle("hidden", !shop);
+  $("finishShop").classList.toggle("hidden", !shop);
+  $("uncheckAll").classList.toggle("hidden", !shop);
+
+  if (mealsMode || recMode) { $("empty").classList.add("hidden"); $("seedBtn").classList.add("hidden"); (recMode ? renderRecipes : renderMeals)(); return; }
+
+  $("editTools").classList.toggle("hidden", !edit);
+  if (edit) {
+    if (filterCat && !names.includes(filterCat)) filterCat = "";
+    $("fCat").innerHTML = `<option value="">Alle kategorier</option>` + names.map((n) => `<option ${n === filterCat ? "selected" : ""}>${esc(n)}</option>`).join("");
+    $("fNeeded").checked = onlyNeeded; $("fSort").value = editSort;
+    $("btnDups").classList.toggle("primary", showDups);
+    visibleEditIds = [];
+  }
+  updateBulk();
+
+  // An empty cache on a new device is not an empty list: offering the start list then would duplicate everything.
+  $("seedBtn").classList.toggle("hidden", items.length > 0 || !itemsSynced);
+  const empty = $("empty");
+  empty.classList.toggle("hidden", !(items.length === 0 || (shop && neededCount === 0)));
+  empty.textContent = items.length === 0
+    ? (itemsSynced ? "Listen er tom. Åpne «⋯» og velg «Last inn startliste»." : "Henter listen…")
+    : "Handlelisten er tom. Gå til «Planlegg» og trykk på varene du trenger.";
+
+  const root = $("list");
+  root.innerHTML = "";
+  if (edit && showDups) root.appendChild(dupPanel());
+  if (mode === "plan" && q) { const p = addNewPanel(names); if (p) root.appendChild(p); }
+  if (shop && neededCount) {
+    const done = items.filter((i) => i.needed && i.checked).length;
+    const p = document.createElement("div");
+    p.className = "progress";
+    p.innerHTML = `${done} av ${neededCount} i kurven<div class="bar"><i style="width:${Math.round(100 * done / neededCount)}%"></i></div>`;
+    root.appendChild(p);
+  }
+  names.forEach((cat, gi) => {
+    const all = byCat.get(cat);
+    if (edit && filterCat && cat !== filterCat) return;
+    let list = all.slice();
+    if (edit && onlyNeeded) list = list.filter((i) => i.needed);
+    const need = all.filter((i) => i.needed).length;
+    if (shop) list = list.filter((i) => i.needed);
+    else if (q) list = list.filter((i) => i.text.toLocaleLowerCase("nb").includes(q));
+    if (hide) list = list.filter((i) => !i.checked);
+    if (!list.length && (shop || (q && !edit))) return;
+    if (!list.length && edit && (q || filterCat || onlyNeeded)) return;
+    list.sort(edit ? editCmp : cmpItems);
+    if (edit) list.forEach((i) => visibleEditIds.push(i.id));
+    const reorderOff = !!q || !!filterCat || onlyNeeded || editSort !== "manual";
+
+    const key = (shop ? "s:" : edit ? "e:" : "p:") + cat;
+    const d = document.createElement("details");
+    d.open = q ? true : (openState[key] ?? !edit);
+    if (edit) d.dataset.id = cat;
+    d.addEventListener("toggle", () => { if (q) return; openState[key] = d.open; localStorage.setItem("openCats", JSON.stringify(openState)); });
+    const count = shop ? `${all.filter((i) => i.needed && !i.checked).length} igjen` : edit ? `${all.length}` : (need ? `${need} valgt` : "");
+    const sum = document.createElement("summary");
+    sum.innerHTML = edit
+      ? `<input type="text" class="gname" value="${esc(cat)}" aria-label="Gruppenavn"><span class="count">${count}</span>`
+      : `${esc(cat)}<span class="count">${count}</span>`;
+    if (edit) {
+      // rename right in the header, without expanding the group
+      const nameInp = sum.querySelector("input");
+      nameInp.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); });
+      for (const ev of ["keydown", "keyup"]) nameInp.addEventListener(ev, (e) => e.stopPropagation());
+      nameInp.addEventListener("change", () => renameGroup(cat, nameInp.value));
+      const gripG = document.createElement("button");
+      gripG.type = "button"; gripG.className = "grip"; gripG.textContent = "⠿";
+      gripG.setAttribute("aria-label", "Dra for å flytte gruppen");
+      gripG.disabled = !!q || !!filterCat || onlyNeeded;
+      gripG.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); });
+      gripG.addEventListener("pointerdown", (e) => dragSort(e, d, root, (ids) => saveGroupOrder(ids),
+        () => { root.classList.add("dragging-groups"); return () => root.classList.remove("dragging-groups"); }));
+      sum.prepend(gripG);
+      for (const [label, dir] of [["▲", -1], ["▼", 1]]) {
+        const b = document.createElement("button");
+        b.type = "button"; b.className = "ico"; b.textContent = label;
+        b.setAttribute("aria-label", dir < 0 ? "Flytt gruppe opp" : "Flytt gruppe ned");
+        b.disabled = (dir < 0 && gi === 0) || (dir > 0 && gi === names.length - 1);
+        b.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); moveGroup(names, gi, dir); });
+        sum.appendChild(b);
+      }
+      const delB = document.createElement("button");
+      delB.type = "button"; delB.className = "ico"; delB.textContent = "🗑";
+      delB.setAttribute("aria-label", "Slett gruppe");
+      delB.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); deleteGroup(cat, all.length); });
+      sum.appendChild(delB);
+    }
+    d.appendChild(sum);
+
+    const ul = document.createElement("ul");
+    list.forEach((it, idx) => {
+      const li = document.createElement("li");
+      if (edit) {
+        li.className = "edit";
+        li.dataset.id = it.id;
+        li.innerHTML = `<button class="grip" type="button" aria-label="Dra for å flytte">⠿</button><input class="sel" type="checkbox" ${selected.has(it.id) ? "checked" : ""} aria-label="Velg"><input class="t" type="text" value="${esc(it.text)}" aria-label="Varenavn">
+          <select aria-label="Flytt til gruppe">${names.map((n) => `<option ${n === cat ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>
+          <button class="ico" type="button" aria-label="Opp">▲</button>
+          <button class="ico" type="button" aria-label="Ned">▼</button>
+          <button class="ico" type="button" aria-label="Slett">🗑</button>`;
+        const [up, down, del] = li.querySelectorAll("button.ico");
+        const grip = li.querySelector(".grip");
+        grip.disabled = reorderOff;
+        grip.addEventListener("pointerdown", (e) => {
+          if (reorderOff) return;
+          dragSort(e, li, ul, async (ids) => {
+            const byId = new Map(list.map((i) => [i.id, i]));
+            const ordered = ids.map((id) => byId.get(id)).filter(Boolean);
+            await batchOver(ordered, (b, i) => { const o = ordered.indexOf(i); if (i.order !== o) b.update(doc(db, "items", i.id), { order: o }); });
+          });
+        });
+        up.disabled = reorderOff || idx === 0;
+        down.disabled = reorderOff || idx === list.length - 1;
+        const inp = li.querySelector("input.t");
+        li.querySelector("input.sel").addEventListener("change", (e) => { e.target.checked ? selected.add(it.id) : selected.delete(it.id); updateBulk(); });
+        inp.addEventListener("change", () => { const t = inp.value.trim(); if (t && t !== it.text) upd(it, { text: t }); else inp.value = it.text; });
+        li.querySelector("select").addEventListener("change", (e) => moveItemToGroup(it, e.target.value));
+        up.addEventListener("click", () => moveItem(list, idx, -1));
+        down.addEventListener("click", () => moveItem(list, idx, 1));
+        del.addEventListener("click", () => { if (confirm(`Slette «${it.text}» for godt?`)) remove(it); });
+      } else {
+        const on = shop ? it.checked : it.needed;
+        li.className = shop ? (it.checked ? "done" : "") : (it.needed ? "need" : "");
+        li.innerHTML = `<input type="checkbox" ${on ? "checked" : ""} aria-label="${shop ? "I handlekurven" : "Trenger"}">
+          <span class="txt">${esc(it.text)}${shop && it.qty ? `<span class="qtyb">${esc(it.qty)}</span>` : ""}${it.mealId ? `<span class="sub">${esc(DAYS[it.day] ?? "")} · ${esc(it.mealName || "")}</span>` : ""}</span>
+          ${!shop && it.needed ? `<input class="qty" type="text" placeholder="antall" value="${esc(it.qty || "")}" aria-label="Antall (valgfritt)" autocomplete="off">` : ""}
+          ${shop ? `<button class="x" aria-label="Fjern fra handlelisten">🗑</button>` : ""}`;
+        const act = () => (shop ? toggleChecked(it) : toggleNeeded(it));
+        li.querySelector("input").addEventListener("change", act);
+        li.querySelector(".txt").addEventListener("click", act);
+        const qi = li.querySelector("input.qty");
+        if (qi) qi.addEventListener("change", () => upd(it, { qty: qi.value.trim() }));
+        if (shop) li.querySelector(".x").addEventListener("click", () => {
+          const { id, ...data } = it;
+          if (it.mealId) remove(it); else upd(it, { needed: false, checked: false, qty: "" });
+          toast(`«${it.text}» fjernet`, () => (it.mealId ? setDoc(doc(db, "items", id), data)
+            : upd(it, { needed: true, checked: !!it.checked, qty: it.qty || "" })));
+        });
+      }
+      ul.appendChild(li);
+    });
+    d.appendChild(ul);
+    if (!shop) {
+      const f = document.createElement("form");
+      f.className = "add";
+      f.innerHTML = `<input type="text" placeholder="Ny vare i ${esc(cat)}…" autocomplete="off" list="suggest"><button type="submit">+</button>`;
+      f.addEventListener("submit", (e) => { e.preventDefault(); const inp = f.querySelector("input"); addItem(inp.value, cat, !edit); inp.value = ""; });
+      d.appendChild(f);
+    }
+    root.appendChild(d);
+  });
+
+  const inCart = shop ? items.filter((i) => i.needed && i.checked).length : 0;
+  if (inCart) {   // "Tøm handlelisten" (removes everything) lives in the ⋯ menu only
+    const fb = document.createElement("button");
+    fb.type = "button"; fb.className = "finishbtn primary";
+    fb.textContent = `✓ Ferdig handlet (fjern ${inCart} avkryssede)`;
+    fb.addEventListener("click", () => $("finishShop").click());
+    root.appendChild(fb);
+  }
+
+  if (edit && !q) {
+    const f = document.createElement("form");
+    f.className = "newgroup";
+    f.innerHTML = `<input type="text" placeholder="Ny gruppe…" autocomplete="off"><button class="primary" type="submit">Legg til gruppe</button>`;
+    f.addEventListener("submit", (e) => { e.preventDefault(); const inp = f.querySelector("input"); addGroup(inp.value); inp.value = ""; });
+    root.appendChild(f);
+  }
+}
+
+// ---------- combined search / add (Planlegg) ----------
+const findItem = (text) => { const n = normName(text); return n ? items.find((i) => !i.mealId && i.category && normName(i.text) === n) : null; };
+const newItemCat = (names) => { const last = localStorage.getItem("lastNewCat"); return names.includes(last) ? last : names[0]; };
+function addNew(text) {
+  const names = groupNames();
+  if (!names.length) return;
+  addItem(text, newItemCat(names));
+  toast(`«${text.trim()}» lagt på handlelisten`);
+  $("search").value = "";
+  render();
+}
+// Enter in the search field: put the matching item on the shopping list, or create it if it does not exist.
+function searchEnter() {
+  const q = $("search").value.trim();
+  if (mode !== "plan" || !q) return;
+  const ex = findItem(q);
+  if (!ex) { addNew(q); return; }
+  if (!ex.needed) upd(ex, { needed: true, checked: false });
+  toast(ex.needed ? `«${ex.text}» står allerede på handlelisten` : `«${ex.text}» lagt på handlelisten`);
+  $("search").value = "";
+  render();
+}
+// Shown above the filtered list while searching: create the item, or pick a product bought at Rema before.
+function addNewPanel(names) {
+  const q = $("search").value.trim(), ql = q.toLocaleLowerCase("nb");
+  if (!names.length) return null;
+  const have = new Set(items.map((i) => normName(i.text || "")));
+  const seen = new Set();
+  const prods = products.filter((p) => p.name && p.name.toLocaleLowerCase("nb").includes(ql))
+    .sort((a, b) => (b.count || 0) - (a.count || 0) || a.name.localeCompare(b.name, "nb"))
+    .filter((p) => { const k = normName(p.name); if (!k || have.has(k) || seen.has(k)) return false; seen.add(k); return true; })
+    .slice(0, 5);
+  const exists = !!findItem(q);
+  if (exists && !prods.length) return null;
+  const box = document.createElement("div");
+  box.className = "addnew";
+  box.innerHTML = `<div class="sugg"><div class="newrow"><span>${exists ? "Forslag legges i:" : `Ny vare «${esc(q)}» i:`}</span>
+    <select aria-label="Kategori">${names.map((n) => `<option>${esc(n)}</option>`).join("")}</select>
+    ${exists ? "" : `<button type="button" class="primary">Legg til</button>`}</div></div>`;
+  const sel = box.querySelector("select"), sugg = box.querySelector(".sugg");
+  sel.value = newItemCat(names);
+  sel.addEventListener("change", () => localStorage.setItem("lastNewCat", sel.value));
+  box.querySelector("button")?.addEventListener("click", () => addNew(q));
+  prods.forEach((p) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.innerHTML = `＋ ${esc(p.name)} <span class="cat">kjøpt ${Number(p.count) || 1}×</span>`;
+    b.addEventListener("click", () => addNew(p.name));
+    sugg.appendChild(b);
+  });
+  return box;
+}
+
+// ---------- dinner planner ----------
+const DAYS = ["Mandag", "Tirsdag", "Onsdag", "Torsdag", "Fredag", "Lørdag", "Søndag"];
+const mealRef = (day) => doc(db, "meals", "dag-" + day);
+// Ingredients are {text, category}; tolerate plain strings.
+const normIng = (list) => (list || []).map((x) => typeof x === "string" ? { text: x, category: groupNames()[0] } : x).filter((x) => x.text);
+const mealIngredients = (m) => normIng(m.ingredients);
+const mealItems = (m) => items.filter((i) => i.mealId === m.id);
+
+async function saveMealName(day, name, m) {
+  name = name.trim();
+  if (!name) return;
+  if (!m) { await setDoc(mealRef(day), { day, name, ingredients: [], planned: false }); return; }
+  if (name === m.name) return;
+  const b = writeBatch(db);
+  b.update(mealRef(day), { name });
+  mealItems(m).forEach((i) => b.update(doc(db, "items", i.id), { mealName: name }));
+  await b.commit();
+}
+const setIngredients = (m, list) => updateDoc(mealRef(m.day), { ingredients: list });
+async function deleteMeal(m) {
+  if (!confirm(`Slette «${m.name}» fra ${DAYS[m.day].toLowerCase()}en?`)) return;
+  const b = writeBatch(db);
+  b.delete(mealRef(m.day));
+  mealItems(m).forEach((i) => b.delete(doc(db, "items", i.id)));
+  await b.commit();
+}
+// Done planning: every ingredient becomes its own shopping-list row (duplicates across dinners are kept).
+async function finishMeal(m) {
+  const list = mealIngredients(m);
+  const b = writeBatch(db);
+  const who = (auth.currentUser?.email || "").split("@")[0];
+  list.forEach((ing) => {
+    const master = items.find((i) => !i.mealId && i.category === ing.category && i.text === ing.text);
+    b.set(doc(itemsCol), {
+      text: ing.text, category: null, mealCategory: ing.category, mealId: m.id, mealName: m.name, day: m.day,
+      needed: true, checked: false, qty: ing.qty || "", order: master?.order ?? 0, addedBy: who, createdAt: serverTimestamp()
+    });
+  });
+  // Save to the dinner database: update the saved dinner if there is one, otherwise create it
+  let rid = recipes.find((r) => r.id === m.recipeId)?.id || recipes.find((r) => normName(r.name) === normName(m.name))?.id;
+  if (!rid) {
+    const ref = doc(recipesCol);
+    b.set(ref, { name: m.name, ingredients: list, recipe: "", createdAt: serverTimestamp() });
+    rid = ref.id;
+  } else b.update(recipeRef(rid), { name: m.name, ingredients: list });
+  b.update(mealRef(m.day), { planned: true, recipeId: rid });
+  await b.commit();
+}
+// Save only: store/update the dinner in the dinner database (Middager) without touching the shopping list.
+async function saveMealOnly(m) {
+  const list = mealIngredients(m);
+  const ex = recipes.find((r) => r.id === m.recipeId) || recipes.find((r) => normName(r.name) === normName(m.name));
+  const b = writeBatch(db);
+  let rid;
+  if (ex) { rid = ex.id; b.update(recipeRef(rid), { name: m.name, ingredients: list }); }
+  else { const ref = doc(recipesCol); rid = ref.id; b.set(ref, { name: m.name, ingredients: list, recipe: "", createdAt: serverTimestamp() }); }
+  b.update(mealRef(m.day), { recipeId: rid });
+  toast(ex ? `«${m.name}» oppdatert i Middager` : `«${m.name}» lagret i Middager`);
+  await b.commit();
+}
+// With an undo function the toast gets an «Angre» button and stays a little longer.
+let toastEl = null;
+function toast(msg, undo) {
+  toastEl?.remove();
+  const t = toastEl = document.createElement("div");
+  t.className = "toast"; t.setAttribute("role", "status");
+  const s = document.createElement("span");
+  s.textContent = msg;
+  t.appendChild(s);
+  if (undo) {
+    const b = document.createElement("button");
+    b.type = "button"; b.textContent = "Angre";
+    b.addEventListener("click", () => { t.remove(); undo(); });
+    t.appendChild(b);
+  }
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), undo ? 6000 : 2200);
+}
+async function reopenMeal(m) {
+  const mine = mealItems(m);
+  if (mine.length && !confirm(`Fjerne ${mine.length} ingredienser fra handlelisten og redigere «${m.name}»?`)) return;
+  const b = writeBatch(db);
+  mine.forEach((i) => b.delete(doc(db, "items", i.id)));
+  b.update(mealRef(m.day), { planned: false });
+  await b.commit();
+}
+
+// Search the existing item list (from the Planlegg tab) or create a new item in a chosen category.
+function ingredientPicker(ing, save) {
+  const wrap = document.createElement("div");
+  wrap.className = "picker";
+  const names = groupNames();
+  wrap.innerHTML = `<input type="search" placeholder="Søk etter vare eller skriv ny…" autocomplete="off"><div class="sugg"></div>`;
+  const inp = wrap.querySelector("input"), box = wrap.querySelector(".sugg");
+  const has = (text, cat) => ing.some((x) => x.text.toLocaleLowerCase("nb") === text.toLocaleLowerCase("nb") && x.category === cat);
+  const add = (text, cat, isNew) => {
+    if (isNew) addItem(text, cat, false);   // becomes a permanent item, not on the shopping list yet
+    return save([...ing, { text, category: cat }]);
+  };
+  const refresh = () => {
+    const q = inp.value.trim(), ql = q.toLocaleLowerCase("nb");
+    box.innerHTML = "";
+    if (!q) return;
+    const hits = items.filter((i) => !i.mealId && i.category && i.text.toLocaleLowerCase("nb").includes(ql) && !has(i.text, i.category))
+      .sort((a, b) => a.text.localeCompare(b.text, "nb")).slice(0, 8);
+    hits.forEach((i) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.innerHTML = `${esc(i.text)} <span class="cat">[${esc(i.category)}]</span>`;
+      b.addEventListener("click", () => add(i.text, i.category, false));
+      box.appendChild(b);
+    });
+    if (!items.some((i) => !i.mealId && i.text.toLocaleLowerCase("nb") === ql)) {
+      const row = document.createElement("div");
+      row.className = "newrow";
+      row.innerHTML = `<span>Ny vare «${esc(q)}» i:</span><select aria-label="Kategori">${names.map((n) => `<option>${esc(n)}</option>`).join("")}</select><button type="button" class="primary">Legg til</button>`;
+      const sel = row.querySelector("select");
+      const last = localStorage.getItem("lastNewCat");
+      if (names.includes(last)) sel.value = last;
+      row.querySelector("button").addEventListener("click", () => { localStorage.setItem("lastNewCat", sel.value); add(q, sel.value, true); });
+      box.appendChild(row);
+    }
+  };
+  inp.addEventListener("input", refresh);
+  return wrap;
+}
+
+// ---------- dinner database ----------
+const recipeRef = (id) => doc(db, "recipes", id);
+async function planRecipe(r, day, switchTab = true) {
+  const old = meals.find((x) => x.day === day);
+  if (old && !confirm(`${DAYS[day]} har allerede «${old.name}». Erstatte den?`)) return;
+  const b = writeBatch(db);
+  if (old) mealItems(old).forEach((i) => b.delete(doc(db, "items", i.id)));
+  b.set(mealRef(day), { day, name: r.name, ingredients: normIng(r.ingredients), planned: false, recipeId: r.id });
+  const done = b.commit();
+  if (switchTab) setMode("meals");
+  await done;
+}
+async function addRecipe(name) {
+  name = name.trim();
+  if (!name) return;
+  const ex = recipes.find((r) => normName(r.name) === normName(name));
+  if (ex) { openRecipes.add(ex.id); alert("Det finnes allerede en middag med det navnet."); render(); return; }
+  const ref = doc(recipesCol);
+  openRecipes.add(ref.id);
+  await setDoc(ref, { name, ingredients: [], recipe: "", createdAt: serverTimestamp() });
+}
+async function deleteRecipe(r) {
+  if (!confirm(`Slette «${r.name}» fra middagsdatabasen? Varer i varelisten beholdes.`)) return;
+  await deleteDoc(recipeRef(r.id));
+}
+
+// ---------- import (from hent_oppskrift.py) ----------
+// Returns {item, exact}. Only an exact match may replace the ingredient; a similar item
+// ("melk" inside "kokosmelk") is just a hint for which category to suggest.
+function matchItem(text) {
+  const n = normName(text);
+  if (!n) return null;
+  const cands = items.filter((i) => !i.mealId && i.category);
+  const exact = cands.find((i) => normName(i.text) === n);
+  if (exact) return { item: exact, exact: true };
+  let best = null;
+  cands.forEach((i) => {
+    const x = normName(i.text);
+    if (x.length >= 4 && n.length >= 4 && (n.includes(x) || x.includes(n)) && (!best || x.length > normName(best.text).length)) best = i;
+  });
+  return best ? { item: best, exact: false } : null;
+}
+function parseImport(raw) {
+  let j;
+  try { j = JSON.parse(raw.trim()); } catch { throw new Error("Det du limte inn er ikke gyldig JSON. Kjør hent_oppskrift.py og lim inn hele resultatet."); }
+  if (j?.format !== "handleliste-oppskrift" || !Array.isArray(j.ingredients)) throw new Error("Dette ser ikke ut som en oppskrift fra hent_oppskrift.py.");
+  const names = groupNames();
+  const fallback = names.includes(localStorage.getItem("lastNewCat")) ? localStorage.getItem("lastNewCat") : names[0];
+  const ingredients = j.ingredients.map((x) => {
+    const text = String(x.text ?? x.raw ?? "").trim();
+    const m = matchItem(text);
+    return { qty: String(x.qty ?? ""), text: m?.exact ? m.item.text : text, category: m ? m.item.category : fallback };
+  }).filter((x) => x.text);
+  const meta = [j.servings, j.time].filter(Boolean).join(" · ");
+  const steps = (Array.isArray(j.steps) ? j.steps : []).map((t, i) => `${i + 1}. ${t}`).join("\n");
+  return { stage: "preview", name: String(j.name || ""), source: String(j.source || ""), steps: (meta ? meta + "\n\n" : "") + steps, ingredients };
+}
+async function saveImport() {
+  const d = importDraft;
+  const name = d.name.trim();
+  if (!name) { alert("Gi middagen et navn."); return; }
+  if (recipes.some((r) => normName(r.name) === normName(name)) && !confirm(`Det finnes allerede en middag som heter «${name}». Lagre likevel?`)) return;
+  const existing = (x) => items.find((i) => !i.mealId && i.category === x.category && normName(i.text) === normName(x.text));
+  const ings = d.ingredients.filter((x) => x.text.trim()).map((x) => ({ qty: x.qty.trim(), category: x.category, text: existing(x)?.text ?? x.text.trim() }));
+  const seen = new Set();
+  for (const x of ings) {                      // unknown ingredients become permanent items (not on the shopping list)
+    const k = x.category + "|" + normName(x.text);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    if (!existing(x)) addItem(x.text, x.category, false);
+  }
+  const ref = doc(recipesCol);
+  openRecipes.add(ref.id);
+  importDraft = null;
+  render();
+  await setDoc(ref, { name, ingredients: ings, recipe: d.steps, source: d.source, createdAt: serverTimestamp() });
+}
+function importPanel() {
+  const box = document.createElement("div");
+  box.className = "imp";
+  const d = importDraft;
+  if (d.stage === "paste") {
+    box.innerHTML = `<h3>📥 Importer oppskrift</h3>
+      <div class="hint">Kjør <code>python hent_oppskrift.py &lt;lenke&gt;</code> på maskinen. Resultatet kopieres til utklippstavlen. Lim det inn her.</div>
+      <div class="pad"><textarea placeholder="Lim inn her…" aria-label="Importdata"></textarea>
+      <div class="row"><button class="primary" type="button">Les inn</button><button type="button" class="link">Avbryt</button></div></div>`;
+    const ta = box.querySelector("textarea");
+    ta.value = d.raw;
+    ta.addEventListener("input", () => { d.raw = ta.value; });
+    const [go, cancel] = box.querySelectorAll("button");
+    go.addEventListener("click", () => { try { importDraft = parseImport(ta.value); render(); } catch (e) { alert(e.message); } });
+    cancel.addEventListener("click", () => { importDraft = null; render(); });
+    return box;
+  }
+  const names = groupNames();
+  box.innerHTML = `<h3>📥 Kontroller før lagring</h3>
+    <div class="hint">Rett det som er feil. Varer som ikke finnes fra før, opprettes i valgt kategori.</div>
+    <div class="pad"><input type="text" class="nm" aria-label="Navn på middag"></div>`;
+  const nm = box.querySelector(".nm");
+  nm.value = d.name;
+  nm.addEventListener("input", () => { d.name = nm.value; });
+  d.ingredients.forEach((x, idx) => {
+    const row = document.createElement("div");
+    row.className = "improw";
+    row.innerHTML = `<input class="q" type="text" placeholder="antall" aria-label="Antall"><input class="t" type="text" aria-label="Vare">
+      <select aria-label="Kategori">${names.map((n) => `<option ${n === x.category ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>
+      <span class="st"></span><button class="ico" type="button" aria-label="Fjern">🗑</button>`;
+    const [q, t] = row.querySelectorAll("input"), sel = row.querySelector("select"), st = row.querySelector(".st");
+    q.value = x.qty; t.value = x.text;
+    const status = () => {
+      const ex = items.some((i) => !i.mealId && i.category === x.category && normName(i.text) === normName(x.text));
+      st.textContent = ex ? "✓ finnes" : "ny";
+      st.className = "st" + (ex ? " ok" : "");
+    };
+    status();
+    q.addEventListener("input", () => { x.qty = q.value; });
+    t.addEventListener("input", () => { x.text = t.value; status(); });
+    t.addEventListener("change", () => { const m = matchItem(x.text); if (m?.exact) { x.text = m.item.text; x.category = m.item.category; render(); } });
+    sel.addEventListener("change", () => { x.category = sel.value; status(); });
+    row.querySelector("button").addEventListener("click", () => { d.ingredients.splice(idx, 1); render(); });
+    box.appendChild(row);
+  });
+  const rest = document.createElement("div");
+  rest.className = "pad";
+  rest.innerHTML = `<label class="hint" style="padding:0">Oppskrift</label><textarea aria-label="Oppskrift"></textarea>
+    <div class="row"><button class="primary" type="button">Lagre middag</button><button type="button" class="link">Avbryt</button></div>`;
+  const ta = rest.querySelector("textarea");
+  ta.value = d.steps;
+  ta.addEventListener("input", () => { d.steps = ta.value; });
+  const [save, cancel] = rest.querySelectorAll("button");
+  save.addEventListener("click", saveImport);
+  cancel.addEventListener("click", () => { importDraft = null; render(); });
+  box.appendChild(rest);
+  return box;
+}
+
+function renderRecipes() {
+  const root = $("list");
+  root.innerHTML = "";
+  const q = $("search").value.trim().toLocaleLowerCase("nb");
+
+  const nf = document.createElement("form");
+  nf.className = "newrecipe";
+  nf.innerHTML = `<input type="text" placeholder="Ny middag…" autocomplete="off"><button class="primary" type="submit">+</button>`;
+  nf.addEventListener("submit", (e) => { e.preventDefault(); const inp = nf.querySelector("input"); addRecipe(inp.value); inp.value = ""; });
+  root.appendChild(nf);
+  if (importDraft) root.appendChild(importPanel());
+  else {
+    const ib = document.createElement("button");
+    ib.type = "button"; ib.className = "importbtn"; ib.textContent = "📥 Importer oppskrift (fra hent_oppskrift.py)";
+    ib.addEventListener("click", () => { importDraft = { stage: "paste", raw: "" }; render(); });
+    root.appendChild(ib);
+  }
+
+  let list = recipes.slice().sort((a, b) => a.name.localeCompare(b.name, "nb"));
+  if (q) list = list.filter((r) => r.name.toLocaleLowerCase("nb").includes(q) || normIng(r.ingredients).some((x) => x.text.toLocaleLowerCase("nb").includes(q)));
+  if (!list.length) {
+    const e = document.createElement("div");
+    e.className = "empty";
+    e.textContent = recipes.length ? "Ingen treff." : "Ingen lagrede middager ennå. Legg til en over, eller fullfør en middag i «Uke» så lagres den her.";
+    root.appendChild(e);
+    return;
+  }
+
+  list.forEach((r) => {
+    const ing = normIng(r.ingredients);
+    const d = document.createElement("details");
+    d.open = q ? true : openRecipes.has(r.id);
+    d.addEventListener("toggle", () => { if (q) return; d.open ? openRecipes.add(r.id) : openRecipes.delete(r.id); });
+    const sum = document.createElement("summary");
+    sum.innerHTML = `<input type="text" class="gname" value="${esc(r.name)}" aria-label="Navn på middag" autocomplete="off"><span class="count">${ing.length} varer${r.recipe?.trim() ? " · 📖" : ""}</span><button class="ico" type="button" aria-label="Slett middag">🗑</button>`;
+    const nameInp = sum.querySelector("input");
+    nameInp.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); });
+    for (const ev of ["keydown", "keyup"]) nameInp.addEventListener(ev, (e) => e.stopPropagation());
+    nameInp.addEventListener("change", () => {
+      const t = nameInp.value.trim();
+      if (t && t !== r.name) updateDoc(recipeRef(r.id), { name: t }); else nameInp.value = r.name;
+    });
+    sum.querySelector("button").addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); deleteRecipe(r); });
+    d.appendChild(sum);
+
+    const save = (list2) => updateDoc(recipeRef(r.id), { ingredients: list2 });
+    const ul = document.createElement("ul");
+    ing.forEach((x, idx) => {
+      const li = document.createElement("li");
+      li.innerHTML = `<span class="txt">${esc(x.text)}<span class="sub">${x.qty ? esc(x.qty) + " · " : ""}${esc(x.category)}</span></span><button class="x" aria-label="Fjern">🗑</button>`;
+      li.querySelector(".x").addEventListener("click", () => save(ing.filter((_, k) => k !== idx)));
+      ul.appendChild(li);
+    });
+    d.appendChild(ul);
+    d.appendChild(ingredientPicker(ing, save));
+
+    const body = document.createElement("div");
+    body.className = "recipe-body";
+    body.innerHTML = `<label>Oppskrift (lagres automatisk)</label><textarea placeholder="Skriv fremgangsmåten her…" aria-label="Oppskrift"></textarea>`;
+    const ta = body.querySelector("textarea");
+    ta.value = r.recipe || "";
+    ta.addEventListener("change", () => updateDoc(recipeRef(r.id), { recipe: ta.value }));
+    if (/^https?:\/\//.test(r.source || "")) {
+      const a = document.createElement("a");
+      a.href = r.source; a.target = "_blank"; a.rel = "noopener noreferrer"; a.textContent = "🔗 Åpne original";
+      body.appendChild(a);
+    }
+    d.appendChild(body);
+
+    const pr = document.createElement("div");
+    pr.className = "planrow";
+    const firstFree = DAYS.findIndex((_, i) => !meals.some((m) => m.day === i));
+    pr.innerHTML = `<select aria-label="Dag">${DAYS.map((n, i) => `<option value="${i}" ${i === Math.max(0, firstFree) ? "selected" : ""}>${n}</option>`).join("")}</select><button class="primary" type="button">📅 Planlegg på dag</button>`;
+    pr.querySelector("button").addEventListener("click", () => planRecipe(r, +pr.querySelector("select").value));
+    d.appendChild(pr);
+    root.appendChild(d);
+  });
+}
+
+function renderMeals() {
+  const root = $("list");
+  root.innerHTML = "";
+  DAYS.forEach((day, dayIdx) => {
+    const m = meals.find((x) => x.day === dayIdx);
+    const d = document.createElement("details");
+    const key = "m:" + dayIdx;
+    d.open = openState[key] ?? true;
+    d.addEventListener("toggle", () => { openState[key] = d.open; localStorage.setItem("openCats", JSON.stringify(openState)); });
+    const sum = document.createElement("summary");
+    sum.innerHTML = `${esc(day)}<span class="count">${m ? esc(m.name) + (m.planned ? " ✓" : "") : ""}</span>`;
+    d.appendChild(sum);
+
+    const nf = document.createElement("form");
+    nf.className = "meal-name";
+    nf.innerHTML = `<input type="text" value="${esc(m?.name || "")}" placeholder="Middag på ${esc(day.toLowerCase())}…" aria-label="Navn på middag" autocomplete="off">` +
+      (m ? `<button class="ico" type="button" aria-label="Slett middag">🗑</button>` : `<button class="primary" type="submit">+</button>`);
+    nf.addEventListener("submit", (e) => { e.preventDefault(); saveMealName(dayIdx, nf.querySelector("input").value, m); });
+    if (m) {
+      nf.querySelector("input").addEventListener("change", (e) => saveMealName(dayIdx, e.target.value, m));
+      nf.querySelector("button").addEventListener("click", () => deleteMeal(m));
+    }
+    d.appendChild(nf);
+
+    if (!m && recipes.length) {
+      const pr = document.createElement("div");
+      pr.className = "planrow";
+      pr.innerHTML = `<select aria-label="Velg lagret middag"><option value="">… eller velg en lagret middag</option>${recipes.slice().sort((a, b) => a.name.localeCompare(b.name, "nb")).map((r) => `<option value="${esc(r.id)}">${esc(r.name)}</option>`).join("")}</select>`;
+      pr.querySelector("select").addEventListener("change", (e) => { const r = recipes.find((x) => x.id === e.target.value); if (r) planRecipe(r, dayIdx, false); });
+      d.appendChild(pr);
+    }
+
+    if (m) {
+      const ing = mealIngredients(m);
+      const ul = document.createElement("ul");
+      ing.forEach((x, idx) => {
+        const li = document.createElement("li");
+        li.innerHTML = `<span class="txt">${esc(x.text)}<span class="sub">${x.qty ? esc(x.qty) + " · " : ""}${esc(x.category)}</span></span>` + (m.planned ? "" : `<button class="x" aria-label="Fjern">🗑</button>`);
+        if (!m.planned) li.querySelector(".x").addEventListener("click", () => setIngredients(m, ing.filter((_, k) => k !== idx)));
+        ul.appendChild(li);
+      });
+      d.appendChild(ul);
+      if (!m.planned) d.appendChild(ingredientPicker(ing, (l) => setIngredients(m, l)));
+      const rec = recipes.find((r) => r.id === m.recipeId);
+      if (rec?.recipe?.trim()) {
+        const rd = document.createElement("details");
+        rd.className = "inner";
+        rd.innerHTML = `<summary>📖 Oppskrift</summary><div class="recipe-view">${esc(rec.recipe)}</div>`;
+        if (/^https?:\/\//.test(rec.source || "")) {
+          const a = document.createElement("a");
+          a.href = rec.source; a.target = "_blank"; a.rel = "noopener noreferrer"; a.textContent = "🔗 Åpne original";
+          a.style.cssText = "display:block;padding:0 14px 10px;color:var(--accent)";
+          rd.appendChild(a);
+        }
+        d.appendChild(rd);
+      }
+      const act = document.createElement("div");
+      act.className = "meal-actions";
+      if (m.planned) {
+        act.innerHTML = `<button type="button">✏️ Rediger på nytt</button>`;
+        act.querySelector("button").addEventListener("click", () => reopenMeal(m));
+      } else {
+        act.innerHTML = `<button class="primary save" type="button">💾 Lagre middag</button><button class="primary done" type="button" ${ing.length ? "" : "disabled"}>💾🛒 Lagre middag og legg i handlekurven</button>`;
+        act.querySelector(".save").addEventListener("click", () => saveMealOnly(m));
+        act.querySelector(".done").addEventListener("click", () => finishMeal(m));
+      }
+      d.appendChild(act);
+    }
+    root.appendChild(d);
+  });
+}
+
+// ---------- smart edit tools ----------
+// Suggestions: products bought at Rema that are not already an item, most-bought first.
+function updateSuggestions() {
+  const dl = document.getElementById("suggest");
+  if (!dl) return;
+  const have = new Set(items.map((i) => normName(i.text || "")));
+  const seen = new Set();
+  const list = products.filter((p) => p.name).sort((a, b) => (b.count || 0) - (a.count || 0) || a.name.localeCompare(b.name, "nb"))
+    .filter((p) => { const k = normName(p.name); if (!k || have.has(k) || seen.has(k)) return false; seen.add(k); return true; })
+    .slice(0, 800);
+  dl.replaceChildren(...list.map((p) => { const o = document.createElement("option"); o.value = p.name; return o; }));
+}
+async function importRema(file) {
+  const data = JSON.parse(await file.text());
+  if (!Array.isArray(data) || !data.every((p) => p && typeof p.name === "string")) throw new Error("Ikke en gyldig rema_produkter.json");
+  const rows = data.map((p) => ({
+    id: /^[0-9]{8,14}$/.test(p.ean || "") ? p.ean : "n-" + normName(p.name),
+    name: p.name.trim(), ean: p.ean || "", group: p.group || "", count: Number(p.count) || 1,
+    lastBought: p.lastBought || "", lastPrice: typeof p.lastPrice === "number" ? p.lastPrice : null
+  })).filter((r) => r.id !== "n-" && r.name);
+  if (!rows.length) throw new Error("Ingen produkter i filen");
+  const ids = new Set(rows.map((r) => r.id));
+  const stale = products.filter((p) => !ids.has(p.id));
+  if (stale.length && !confirm(`Erstatt ${products.length} eksisterende Rema-produkter med ${rows.length} nye? ${stale.length} gamle fjernes. Handlelisten påvirkes ikke.`)) return;
+  // Write new first, then delete leftovers, so a failure leaves extras rather than a gap.
+  await batchOver(rows, (b, r) => { const { id, ...rest } = r; b.set(doc(productsCol, id), rest); });
+  await batchOver(stale, (b, p) => b.delete(doc(productsCol, p.id)));
+  alert(`Importerte ${rows.length} Rema-produkter` + (stale.length ? `, fjernet ${stale.length} gamle` : "") + ". De dukker opp som forslag når du skriver en ny vare.");
+}
+const normName = (t) => t.toLocaleLowerCase("nb").replace(/[^a-z0-9æøå]/g, "");
+function lev1(a, b) {   // true if edit distance <= 1
+  if (a === b) return true;
+  if (Math.abs(a.length - b.length) > 1) return false;
+  let i = 0; while (i < a.length && i < b.length && a[i] === b[i]) i++;
+  if (a.length === b.length) return a.slice(i + 1) === b.slice(i + 1);
+  return a.length > b.length ? a.slice(i + 1) === b.slice(i) : a.slice(i) === b.slice(i + 1);
+}
+function findDupGroups() {
+  const list = items.filter((i) => !i.mealId && i.category).map((i) => ({ it: i, n: normName(i.text) })).filter((x) => x.n);
+  const parent = list.map((_, i) => i);
+  const find = (x) => (parent[x] === x ? x : (parent[x] = find(parent[x])));
+  for (let a = 0; a < list.length; a++) for (let b = a + 1; b < list.length; b++) {
+    const x = list[a].n, y = list[b].n;
+    if (x === y || (x.length >= 4 && y.length >= 4 && lev1(x, y))) parent[find(a)] = find(b);
+  }
+  const groups = new Map();
+  list.forEach((x, i) => { const r = find(i); (groups.get(r) || groups.set(r, []).get(r)).push(x.it); });
+  return [...groups.values()].filter((g) => g.length > 1);
+}
+async function mergeKeep(keep, others) {
+  const b = writeBatch(db);
+  others.forEach((o) => b.delete(doc(db, "items", o.id)));
+  if (!keep.needed && others.some((o) => o.needed)) b.update(doc(db, "items", keep.id), { needed: true });
+  await b.commit();
+}
+function dupPanel() {
+  const groups = findDupGroups();
+  const box = document.createElement("div");
+  box.className = "dups";
+  box.innerHTML = `<h3>${groups.length ? `${groups.length} mulige duplikater` : "Ingen duplikater funnet 🎉"}<button type="button">Lukk</button></h3>`;
+  box.querySelector("h3 button").addEventListener("click", () => { showDups = false; render(); });
+  groups.forEach((g) => {
+    const gd = document.createElement("div");
+    gd.className = "dupgroup";
+    g.sort((a, b) => a.text.localeCompare(b.text, "nb")).forEach((it) => {
+      const r = document.createElement("div");
+      r.className = "duprow";
+      r.innerHTML = `<span class="n">${esc(it.text)}</span><span class="c">[${esc(it.category)}]${it.needed ? " · på handlelisten" : ""}</span><button type="button">Behold</button>`;
+      r.querySelector("button").addEventListener("click", () => {
+        const others = g.filter((o) => o !== it);
+        if (confirm(`Beholde «${it.text}» [${it.category}] og slette ${others.length} andre?`)) mergeKeep(it, others);
+      });
+      gd.appendChild(r);
+    });
+    box.appendChild(gd);
+  });
+  return box;
+}
+function updateBulk() {
+  const ids = new Set(items.map((i) => i.id));
+  [...selected].forEach((id) => { if (!ids.has(id)) selected.delete(id); });
+  const on = mode === "edit" && selected.size > 0;
+  $("bulkBar").classList.toggle("hidden", !on);
+  if (!on) return;
+  $("bulkCount").textContent = `${selected.size} valgt`;
+  const sel = $("bulkCat"), keep = sel.value, names = groupNames();
+  sel.innerHTML = names.map((n) => `<option>${esc(n)}</option>`).join("");
+  if (names.includes(keep)) sel.value = keep;
+}
+async function bulkMove() {
+  const target = $("bulkCat").value;
+  const moving = items.filter((i) => selected.has(i.id) && i.category !== target);
+  if (!target || !moving.length) return;
+  const inTarget = items.filter((i) => i.category === target);
+  let order = inTarget.length ? Math.max(...inTarget.map((i) => i.order ?? 0)) + 1 : 0;
+  const moved = new Set(moving.map(itemKey));
+  const ops = moving.map((it) => { const o = order++; return (b) => b.update(doc(db, "items", it.id), { category: target, order: o }); });
+  const done = runOps([...ops, ...recatOps((x) => (moved.has(itemKey(x)) ? target : null))]);
+  selected.clear(); render();
+  await done;
+}
+async function bulkDelete() {
+  const del = items.filter((i) => selected.has(i.id));
+  if (!del.length || !confirm(`Slette ${del.length} varer for godt?`)) return;
+  const done = batchOver(del, (b, it) => b.delete(doc(db, "items", it.id)));
+  selected.clear(); render();
+  await done;
+}
+
+// ---------- drag & drop reordering (pointer events: mouse + touch) ----------
+// el: the dragged element, container: its parent; children with data-id take part.
+// onDone(ids) gets the new id order; prep() may return an undo function (e.g. collapse groups while dragging).
+function dragSort(e, el, container, onDone, prep) {
+  if (e.button != null && e.button > 0) return;
+  e.preventDefault();
+  // Moving a row in the DOM would release a capture held by its own grip, so capture on <html>
+  // (never moves) and listen on window: pointer events keep arriving however fast you drag.
+  const pid = e.pointerId, root = document.documentElement;
+  try { root.setPointerCapture(pid); } catch {}
+  dragActive = true;
+  const undo = prep?.();
+
+  // Measure once. During the drag everything is arithmetic on cached sizes (no layout reads => no lag).
+  const order = [...container.children].filter((c) => c.dataset.id);
+  const rects = order.map((r) => r.getBoundingClientRect());
+  const h = new Map(order.map((r, i) => [r, rects[i].height]));
+  const gap = order.length > 1 ? Math.max(0, rects[1].top - rects[0].bottom) : 0;
+  const startTop = rects[0].top + window.scrollY;           // page coordinates of the first row
+  const r0 = rects[order.indexOf(el)];
+  const grab = Math.min(Math.max(e.clientY - r0.top, 0), r0.height);
+  const hEl = h.get(el);
+  let y = e.clientY, raf = 0;
+  el.classList.add("dragging");
+  el.style.willChange = "transform";
+
+  const render1 = () => {
+    raf = 0;
+    const wantTop = y + window.scrollY - grab;               // where the dragged row should be (page coords)
+    const center = wantTop + hEl / 2;
+    // target slot = number of other rows whose midpoint is above the dragged row's center
+    const others = order.filter((r) => r !== el);
+    let pos = startTop, target = 0;
+    for (const o of others) {
+      if (pos + h.get(o) / 2 < center) target++;
+      pos += h.get(o) + gap;
+    }
+    if (order.indexOf(el) !== target) {
+      order.splice(order.indexOf(el), 1);
+      order.splice(target, 0, el);
+      if (target >= others.length) others[others.length - 1].after(el); else others[target].before(el);
+    }
+    let natural = startTop;
+    for (const r of order) { if (r === el) break; natural += h.get(r) + gap; }
+    el.style.transform = `translateY(${wantTop - natural}px)`;
+  };
+  const schedule = () => { if (!raf) raf = requestAnimationFrame(render1); };
+  render1();
+
+  const move = (ev) => { if (ev.pointerId !== pid) return; y = ev.clientY; schedule(); };
+  const timer = setInterval(() => {            // auto-scroll near the edges
+    if (y < 70) window.scrollBy(0, -14); else if (y > window.innerHeight - 70) window.scrollBy(0, 14); else return;
+    schedule();
+  }, 16);
+  const finish = (save) => {
+    clearInterval(timer);
+    if (raf) cancelAnimationFrame(raf);
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", up);
+    window.removeEventListener("pointercancel", cancel);
+    try { root.releasePointerCapture(pid); } catch {}
+    el.classList.remove("dragging");
+    el.style.transform = ""; el.style.willChange = "";
+    const ids = order.map((c) => c.dataset.id);
+    undo?.();
+    dragActive = false;
+    pendingRender = false;
+    // The local snapshot redraws right after the write; the timer only covers "nothing changed".
+    if (save) { onDone(ids); setTimeout(safeRender, 300); } else render();
+  };
+  const up = (ev) => { if (ev.pointerId === pid) finish(true); }, cancel = (ev) => { if (ev.pointerId === pid) finish(false); };
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", up);
+  window.addEventListener("pointercancel", cancel);
+}
+
+// ---------- edit operations ----------
+// Persist a full group order (rewrites order 0..n so there are never ties)
+// "Kjøtt & fisk" and "Kjøtt/fisk" give the same slug; never reuse an id that belongs to another group.
+function freeCatId(name, used) {
+  let id = slug(name);
+  for (let k = 2; used.has(id); k++) id = slug(name) + "-" + k;
+  used.add(id);
+  return id;
+}
+async function saveGroupOrder(names) {
+  const known = new Map(cats.map((c) => [c.name, c.id]));
+  const used = new Set(cats.map((c) => c.id));
+  await batchOver(names, (b, n) => {
+    const id = known.get(n) || freeCatId(n, used);
+    b.set(doc(catsCol, id), { name: n, order: names.indexOf(n) });
+  });
+}
+async function moveGroup(names, i, dir) {
+  document.activeElement?.blur?.(); // so the page can redraw even if a text field had focus
+  pendingRender = false;
+  const j = i + dir;
+  if (j < 0 || j >= names.length) return;
+  const next = names.slice();
+  [next[i], next[j]] = [next[j], next[i]];
+  await saveGroupOrder(next);
+}
+async function addGroup(name) {
+  name = name.trim();
+  if (!name) return;
+  if (groupNames().some((n) => n.toLocaleLowerCase("nb") === name.toLocaleLowerCase("nb"))) { alert("Det finnes allerede en gruppe med det navnet."); return; }
+  await saveGroupOrder([...groupNames(), name]);
+}
+async function renameGroup(oldName, newName) {
+  newName = newName.trim();
+  if (!newName || newName === oldName) { render(); return; }
+  if (groupNames().some((n) => n !== oldName && n.toLocaleLowerCase("nb") === newName.toLocaleLowerCase("nb"))) { alert("Det finnes allerede en gruppe med det navnet."); render(); return; }
+  const c = cats.find((x) => x.name === oldName);
+  const order = groupNames().indexOf(oldName);
+  const ops = [(b) => b.set(doc(catsCol, c?.id || freeCatId(newName, new Set(cats.map((x) => x.id)))), { name: newName, order })];
+  items.forEach((it) => { if (it.category === oldName) ops.push((b) => b.update(doc(db, "items", it.id), { category: newName })); });
+  // dinners (week plan, saved dinners, dinner rows on the shopping list) carry their own copy of the group name
+  ops.push(...recatOps((x) => (x.category === oldName ? newName : null)));
+  await runOps(ops);
+}
+async function deleteGroup(name, count) {
+  if (count > 0) { alert(`«${name}» har ${count} varer. Flytt eller slett dem først.`); return; }
+  // Dinner ingredients that still point at this group follow their item, or go to the first other group.
+  const fallback = groupNames().find((n) => n !== name);
+  const home = (x) => items.find((i) => !i.mealId && i.category && i.category !== name && normName(i.text) === normName(x.text))?.category || fallback;
+  const ops = recatOps((x) => (x.category === name ? home(x) : null));
+  if (ops.length && !fallback) { alert(`«${name}» brukes av middager og er den eneste gruppen.`); return; }
+  if (!confirm(`Slette gruppen «${name}»?` + (ops.length ? `\n\nMiddagsingredienser som ligger i gruppen flyttes til gruppen varen ligger i nå (ellers «${fallback}»).` : ""))) return;
+  const c = cats.find((x) => x.name === name);
+  if (c) ops.push((b) => b.delete(doc(catsCol, c.id)));
+  await runOps(ops);
+}
+// Items: rewrite order 0..n for a group's list so swaps are stable
+async function moveItem(list, i, dir) {
+  const j = i + dir;
+  if (j < 0 || j >= list.length) return;
+  const next = list.slice();
+  [next[i], next[j]] = [next[j], next[i]];
+  await batchOver(next, (b, it) => { const o = next.indexOf(it); if (it.order !== o) b.update(doc(db, "items", it.id), { order: o }); });
+}
+async function moveItemToGroup(it, group) {
+  if (group === it.category) return;
+  const inTarget = items.filter((i) => i.category === group);
+  const order = inTarget.length ? Math.max(...inTarget.map((i) => i.order ?? 0)) + 1 : 0;
+  const key = itemKey(it);
+  await runOps([(b) => b.update(doc(db, "items", it.id), { category: group, order }), ...recatOps((x) => (itemKey(x) === key ? group : null))]);
+}
+const itemKey = (x) => x.category + "|" + normName(x.text || "");
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+// ---------- backup / restore ----------
+const BACKUP_COLS = ["items", "categories", "meals", "recipes"];
+const encVal = (v) => v instanceof Timestamp ? { __ts: [v.seconds, v.nanoseconds] }
+  : Array.isArray(v) ? v.map(encVal)
+  : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, encVal(x)])) : v;
+const decVal = (v) => v && typeof v === "object" && !Array.isArray(v)
+  ? (v.__ts ? new Timestamp(v.__ts[0], v.__ts[1]) : Object.fromEntries(Object.entries(v).map(([k, x]) => [k, decVal(x)])))
+  : Array.isArray(v) ? v.map(decVal) : v;
+async function backupDownload() {
+  const out = { format: "handleliste-backup", version: 1, exportedAt: new Date().toISOString(), collections: {} };
+  for (const c of BACKUP_COLS) {
+    const snap = await getDocs(collection(db, c));
+    out.collections[c] = snap.docs.map((d) => ({ id: d.id, data: encVal(d.data()) }));
+  }
+  const n = Object.values(out.collections).reduce((a, l) => a + l.length, 0);
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(out, null, 1)], { type: "application/json" }));
+  a.download = `handleliste-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  toast(`Sikkerhetskopi lastet ned (${n} dokumenter)`);
+}
+const BK = {
+  str: (n) => (v) => typeof v === "string" && v.length <= n,
+  num: (v) => Number.isFinite(v),
+  bool: (v) => typeof v === "boolean",
+  ts: (v) => v?.__ts && v.__ts.length === 2 && v.__ts.every(Number.isInteger),
+};
+const bkOpt = (f) => (v) => v == null || f(v);
+const bkIng = (v) => typeof v === "string" ? v.length <= 300
+  : v && typeof v === "object" && BK.str(300)(v.text) && (v.category == null || BK.str(100)(v.category)) && (v.qty == null || BK.str(100)(v.qty));
+const BK_SCHEMA = {
+  items: { req: ["text"], f: { text: BK.str(300), category: bkOpt(BK.str(100)), needed: BK.bool, checked: BK.bool, order: BK.num, qty: BK.str(100),
+    mealId: BK.str(100), mealName: BK.str(300), mealCategory: bkOpt(BK.str(100)), day: BK.num, addedBy: BK.str(100), createdAt: bkOpt(BK.ts) } },
+  categories: { req: ["name"], f: { name: BK.str(100), order: BK.num } },
+  meals: { req: ["name", "day"], f: { name: BK.str(300), day: (v) => Number.isInteger(v) && v >= 0 && v <= 6, planned: BK.bool, recipeId: bkOpt(BK.str(100)),
+    ingredients: (v) => Array.isArray(v) && v.length <= 300 && v.every(bkIng) } },
+  recipes: { req: ["name"], f: { name: BK.str(300), recipe: BK.str(50000), source: BK.str(2000), createdAt: bkOpt(BK.ts),
+    ingredients: (v) => Array.isArray(v) && v.length <= 300 && v.every(bkIng) } },
+};
+// Returns a list of problems (empty = file is safe to restore). Nothing is written before this passes.
+function validateBackup(j) {
+  const errs = [];
+  const add = (m) => { if (errs.length < 12) errs.push(m); };
+  if (!j || typeof j.collections !== "object" || Array.isArray(j.collections)) return ["Mangler «collections»."];
+  Object.keys(j.collections).forEach((c) => { if (!BACKUP_COLS.includes(c)) add(`Ukjent samling «${c}».`); });
+  let total = 0;
+  for (const c of BACKUP_COLS) {
+    const list = j.collections[c] ?? [];
+    if (!Array.isArray(list)) { add(`«${c}» er ikke en liste.`); continue; }
+    total += list.length;
+    const sc = BK_SCHEMA[c], seen = new Set();
+    list.forEach((d, n) => {
+      const at = `${c} #${n + 1}`;
+      if (!d || typeof d.id !== "string" || !/^[A-Za-z0-9æøåÆØÅ_-]{1,64}$/.test(d.id)) return add(`${at}: ugyldig id.`);
+      if (seen.has(d.id)) add(`${at}: id «${d.id}» finnes to ganger.`);
+      seen.add(d.id);
+      const data = d.data;
+      if (!data || typeof data !== "object" || Array.isArray(data)) return add(`${at}: mangler data.`);
+      sc.req.forEach((k) => { if (data[k] === undefined) add(`${at}: mangler «${k}».`); });
+      Object.entries(data).forEach(([k, v]) => {
+        if (!sc.f[k]) add(`${at}: ukjent felt «${k}».`);
+        else if (!sc.f[k](v)) add(`${at}: ugyldig verdi i «${k}».`);
+      });
+    });
+  }
+  if (total > 20000) add("For mange dokumenter (maks 20000).");
+  return errs;
+}
+async function restoreFromFile(file) {
+  if (file.size > 20 * 1024 * 1024) { alert("Filen er for stor."); return; }
+  let j;
+  try { j = JSON.parse(await file.text()); } catch { alert("Filen er ikke gyldig JSON."); return; }
+  if (j?.format !== "handleliste-backup" || !j.collections) { alert("Dette er ikke en sikkerhetskopi fra Handleliste."); return; }
+  const errs = validateBackup(j);
+  if (errs.length) { alert("Filen er ikke gyldig og ble ikke gjenopprettet:\n\n• " + errs.join("\n• ")); return; }
+  const all = BACKUP_COLS.flatMap((c) => (j.collections[c] || []).map((d) => ({ c, ...d })));
+  if (!confirm(`Gjenopprette ${all.length} dokumenter fra ${j.exportedAt?.slice(0, 10) || "ukjent dato"}?
+
+Eksisterende dokumenter med samme id overskrives. Dokumenter som er opprettet etter sikkerhetskopien blir liggende.`)) return;
+  const done = batchOver(all, (b, d) => b.set(doc(db, d.c, d.id), decVal(d.data)));
+  toast(`Gjenopprettet ${all.length} dokumenter`);
+  await done;
+}
+
+// ---------- UI wiring ----------
+$("backupBtn").addEventListener("click", () => backupDownload().catch((e) => alert("Sikkerhetskopi feilet: " + e.message)));
+$("restoreBtn").addEventListener("click", () => $("restoreFile").click());
+$("restoreFile").addEventListener("change", (e) => {
+  const f = e.target.files[0]; e.target.value = "";
+  if (f) restoreFromFile(f).catch((err) => alert("Gjenoppretting feilet: " + err.message));
+});
+$("remaBtn").addEventListener("click", () => $("remaFile").click());
+$("remaFile").addEventListener("change", (e) => {
+  const f = e.target.files[0]; e.target.value = "";
+  if (f) importRema(f).catch((err) => alert("Import feilet: " + err.message));
+});
+$("search").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); searchEnter(); } });
+const setAllOpen = (open) => document.querySelectorAll("#list details").forEach((d) => { d.open = open; });
+$("expandAll").addEventListener("click", () => setAllOpen(true));
+$("collapseAll").addEventListener("click", () => setAllOpen(false));
+$("menuBtn").addEventListener("click", () => $("menu").classList.toggle("hidden"));
+$("hideDone").addEventListener("change", () => { localStorage.setItem("hideDone", $("hideDone").checked ? "1" : "0"); render(); });
+const setMode = (m) => { openRecipes.clear(); $("search").value = ""; mode = m; localStorage.setItem("mode", m); window.scrollTo(0, 0); render(); syncWakeLock(); };
+// Keep the screen on while shopping (released automatically when the app is hidden, so re-request on return).
+let wakeLock = null;
+async function syncWakeLock() {
+  const want = mode === "shop" && document.visibilityState === "visible" && !!auth.currentUser;
+  try {
+    if (want && !wakeLock && navigator.wakeLock) {
+      const l = wakeLock = await navigator.wakeLock.request("screen");
+      l.addEventListener("release", () => { if (wakeLock === l) wakeLock = null; });
+    } else if (!want && wakeLock) { const l = wakeLock; wakeLock = null; await l.release(); }
+  } catch { wakeLock = null; }   // not supported, or refused (e.g. battery saver)
+}
+document.addEventListener("visibilitychange", syncWakeLock);
+$("tabPlan").addEventListener("click", () => setMode("plan"));
+$("tabShop").addEventListener("click", () => setMode("shop"));
+$("tabEdit").addEventListener("click", () => setMode("edit"));
+$("search").addEventListener("input", render);
+$("fCat").addEventListener("change", (e) => { filterCat = e.target.value; render(); });
+$("fNeeded").addEventListener("change", (e) => { onlyNeeded = e.target.checked; render(); });
+$("fSort").addEventListener("change", (e) => { editSort = e.target.value; render(); });
+$("btnDups").addEventListener("click", () => { showDups = !showDups; render(); });
+$("btnSelAll").addEventListener("click", () => { visibleEditIds.forEach((id) => selected.add(id)); render(); });
+$("bulkMove").addEventListener("click", bulkMove);
+$("bulkDel").addEventListener("click", bulkDelete);
+$("bulkClear").addEventListener("click", () => { selected.clear(); render(); });
+const bulk = (pred, data, msg) => {
+  const l = items.filter(pred);
+  $("menu").classList.add("hidden");
+  // Ingredients that came from a dinner are deleted (not returned to the master list) when removed.
+  if (l.length && confirm(msg(l.length))) batchOver(l, (b, it) =>
+    (it.mealId && data.needed === false) ? b.delete(doc(db, "items", it.id)) : b.update(doc(db, "items", it.id), data.needed === false ? { ...data, qty: "" } : data));
+};
+// Done shopping: ticked items leave the shopping list (back to the master list, unticked)
+$("finishShop").addEventListener("click", () => bulk((i) => i.needed && i.checked, { needed: false, checked: false }, (n) => `Fjerne ${n} avkryssede varer fra handlelisten?`));
+$("uncheckAll").addEventListener("click", () => bulk((i) => i.needed && i.checked, { checked: false }, (n) => `Fjerne avkryssing på ${n} varer?`));
+$("clearNeeded").addEventListener("click", () => bulk((i) => i.needed, { needed: false, checked: false }, (n) => `Tømme hele handlelisten (${n} varer)?`));
+$("tabMeals").addEventListener("click", () => setMode("meals"));
+$("tabRecipes").addEventListener("click", () => setMode("recipes"));
+$("clearMeals").addEventListener("click", async () => {
+  $("menu").classList.add("hidden");
+  if (!meals.length || !confirm("Tømme hele ukeplanen? Ingredienser fra middagene fjernes også fra handlelisten.")) return;
+  const refs = meals.map((m) => doc(db, "meals", m.id));
+  items.filter((i) => i.mealId).forEach((i) => refs.push(doc(db, "items", i.id)));
+  await batchOver(refs, (batch, ref) => batch.delete(ref));
+});
+$("seedBtn").addEventListener("click", async () => {
+  if (items.length || !itemsSynced) return;
+  const seed = await (await fetch("seed.json")).json();
+  const rows = [];
+  seed.forEach((c) => c.items.forEach((it, i) => rows.push({ text: it.text, category: c.name, needed: false, checked: false, order: i })));
+  await batchOver(rows, (b, r) => b.set(doc(itemsCol), { ...r, addedBy: "import", createdAt: serverTimestamp() }));
+});
+
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
