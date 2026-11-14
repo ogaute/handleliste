@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="nb">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Handleliste – tester</title>
+<!-- The app only reaches Firebase through js/firebase.js. Here the SDK is swapped for in-memory stubs,
+     so the tests never touch the real database and need no login. -->
+<script type="importmap">
+{ "imports": {
+  "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js": "./stub-app.js",
+  "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js": "./stub-auth.js",
+  "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js": "./stub-firestore.js"
+} }
+</script>
+<style>
+  #testout{position:fixed;right:8px;bottom:8px;z-index:1000;max-height:70vh;max-width:min(560px,95vw);overflow:auto;margin:0;
+    padding:10px 12px;border-radius:10px;background:#111;color:#eee;font:12px/1.5 ui-monospace,Consolas,monospace;white-space:pre-wrap}
+  #testout a{color:#8cf}
+</style>
+</head>
+<body>
+<script type="module" src="run.js"></script>
+</body>
+</html>

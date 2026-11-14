@@ -44,7 +44,7 @@ e-postadressen for å få tilgang, så ingen kan registrere seg selv med en av d
 
 ## Oppdatere Firebase-SDK
 
-Versjonsnummeret står to steder og må være likt: importene øverst i `app.js` og `SDK` i `sw.js`
+Versjonsnummeret står tre steder og må være likt: `js/firebase.js`, `SDK` i `sw.js` og importkartet i `tests/index.html`
 (som lagrer SDK-filene slik at appen starter uten nett). Øk også `CACHE` i `sw.js`.
 
 ## Varer fra Rema 1000 (forslag)
@@ -59,3 +59,38 @@ Bruker Remas **private** API via `hent_rema.py` (uoffisielt, kan slutte å virke
 5. I appen: `⋯` → **🛍 Importer Rema-produkter** → velg `rema_produkter.json`.
 
 Forslagene vises som nedtrekksliste i «Legg til ny vare…» og i feltene per kategori. Varer som allerede finnes i listen foreslås ikke.
+
+## Kodestruktur
+
+Ingen byggesteg: `index.html` laster `js/app.js` som vanlige ES-moduler. En modul importerer bare fra dem som står over den her.
+
+| Fil | Innhold |
+| --- | --- |
+| `js/util.js` | Små rene hjelpefunksjoner |
+| `js/logic.js` | Ren logikk: varematching, duplikater, validering av sikkerhetskopi |
+| `js/firebase.js` | Eneste fil som bruker Firebase-SDK-en |
+| `js/store.js` | Dataene fra Firestore og alle felles skriveoperasjoner |
+| `js/ui.js` | Felles UI-tilstand (aktiv fane), `render()` og toast |
+| `js/drag.js` | Dra-og-slipp-sortering |
+| `js/rema.js` | Rema-forslag og import |
+| `js/backup.js` | Sikkerhetskopi og gjenoppretting |
+| `js/edit-tools.js` | Rediger-fanen: filter, duplikater, flytting, grupper |
+| `js/dinners.js` | Uke og Middager, inkludert oppskriftsimport |
+| `js/list-view.js` | Varelisten i Planlegg, Handle og Rediger |
+| `js/app.js` | Innlogging og kobling av knappene i `index.html` |
+
+Nye filer i `js/` må legges til i `SHELL` i `sw.js` (og `CACHE` økes), ellers mangler de ved første start uten nett.
+
+Skriv aldri `await` foran en Firestore-skriving før noe annet skal skje: uten nett blir løftet aldri ferdig.
+
+## Tester
+
+Testene kjører i nettleseren mot en Firestore-etterligning i minnet (`tests/stub-firestore.js`), uten innlogging og uten å røre
+de ekte dataene. Etterligningen oppfører seg som en frakoblet klient, så kode som venter på en skriving henger og testen feiler.
+
+```
+python -m http.server 8000
+```
+
+Åpne `http://localhost:8000/tests/?suite=a` og `http://localhost:8000/tests/?suite=b`. Resultatet vises nede til høyre,
+og fanetittelen blir «OK» eller «FEIL».
