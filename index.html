@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Handleliste">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="apple-touch-icon" href="icon.svg">
+<link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" href="icon.svg">
 <title>Handleliste</title>
 <style>
@@ -48,7 +48,7 @@
   li .txt{flex:1;word-break:break-word;cursor:pointer;user-select:none}
   li.done .txt{text-decoration:line-through;color:var(--muted)}
   li input[type=checkbox]{width:24px;height:24px;accent-color:var(--accent);flex:none}
-  li .x{border:none;background:none;color:var(--muted);font-size:18px;padding:4px 8px}
+  li .x{border:none;background:none;color:var(--muted);font-size:18px;padding:4px 8px;min-width:44px;min-height:44px;margin:-6px -8px -6px 0}
   li .who{font-size:11px;color:var(--muted)}
   form.add{display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--line)}
   form.add input{flex:1}
@@ -82,7 +82,8 @@
   form.newgroup{display:flex;gap:8px;margin:16px 0}
   form.newgroup input{flex:1}
   .hidden{display:none!important}
-  .toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--accent);color:var(--accent-text);padding:10px 16px;border-radius:12px;font-weight:600;z-index:100;box-shadow:0 4px 16px rgba(0,0,0,.3);max-width:90vw}
+  .toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--accent);color:var(--accent-text);padding:10px 16px;border-radius:12px;font-weight:600;z-index:100;box-shadow:0 4px 16px rgba(0,0,0,.3);max-width:90vw;display:flex;gap:12px;align-items:center}
+  .toast button{background:transparent;color:inherit;border-color:currentColor;padding:6px 12px;font-weight:700;flex:none}
   .grip{touch-action:none;cursor:grab;-webkit-user-select:none;user-select:none;border:none;background:none;color:var(--muted);font-size:20px;line-height:1;padding:4px 6px;flex:none}
   .grip:disabled{opacity:.3;cursor:not-allowed}
   .dragging{position:relative;z-index:30;background:var(--card);box-shadow:0 6px 20px rgba(0,0,0,.35);opacity:.97;cursor:grabbing}
@@ -125,7 +126,12 @@
   .duprow .n{flex:1;font-weight:600}
   .duprow .c{color:var(--muted);font-size:12px}
   .duprow button{padding:4px 10px}
-  .clearbtn{display:block;width:100%;margin:16px 0;padding:12px;color:var(--danger);border-color:var(--danger)}
+  .finishbtn{display:block;width:100%;margin:16px 0;padding:14px;font-weight:600}
+  .progress{margin:12px 0 0;font-size:14px;color:var(--muted)}
+  .progress .bar{height:6px;border-radius:3px;background:var(--line);margin-top:6px;overflow:hidden}
+  .progress .bar i{display:block;height:100%;background:var(--accent);border-radius:3px}
+  .addnew{background:var(--card);border:1px solid var(--accent);border-radius:14px;margin:12px 0;padding:10px 14px}
+  .addnew .sugg{margin-top:0}
   .picker{padding:10px 14px;border-top:1px solid var(--line)}
   .picker input{width:100%}
   .sugg{display:flex;flex-direction:column;gap:6px;margin-top:8px}
@@ -138,8 +144,6 @@
   .meal-actions{padding:10px 14px;border-top:1px solid var(--line);display:flex;gap:8px;flex-wrap:wrap}
   .meal-actions button{flex:1}
   li .sub{display:block;font-size:12px;color:var(--muted);font-weight:400}
-  .quickadd{display:flex;gap:8px;margin-top:8px}
-  .quickadd input{flex:1}
   /* Desktop edit mode: compact table, one item per row */
   @media (min-width: 640px){
     body[data-mode=edit] .wrap{max-width:1000px}
@@ -195,13 +199,8 @@
       <button id="tabRecipes" role="tab">📖 Middager</button>
       <button id="tabEdit" role="tab">✏️ Rediger</button>
     </div>
-    <input type="search" id="search" class="search" placeholder="Søk i alle varer…" autocomplete="off">
-    <form class="quickadd" id="quickForm">
-      <input type="text" id="quickText" placeholder="Legg til ny vare…" autocomplete="off" list="suggest">
-      <datalist id="suggest"></datalist>
-      <select id="quickCat" aria-label="Kategori"></select>
-      <button class="primary" type="submit">+</button>
-    </form>
+    <input type="search" id="search" class="search" placeholder="Søk eller legg til vare…" autocomplete="off" enterkeyhint="done">
+    <datalist id="suggest"></datalist>
     <div class="toolbar hidden" id="menu">
       <label id="hideDoneLbl"><input type="checkbox" id="hideDone"> Skjul avkryssede</label>
       <button id="finishShop">Ferdig handlet</button>
@@ -244,7 +243,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/fireba
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, GoogleAuthProvider, signInWithPopup }
   from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-  collection, getDocs, Timestamp, onSnapshot, addDoc, setDoc, updateDoc, deleteDoc, doc, writeBatch, serverTimestamp }
+  collection, getDocs, Timestamp, onSnapshot, setDoc, updateDoc, deleteDoc, doc, writeBatch, serverTimestamp }
   from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
@@ -280,6 +279,7 @@ onAuthStateChanged(auth, (user) => {
     $("loginView").classList.add("hidden");
     $("appView").classList.remove("hidden");
     subscribe();
+    syncWakeLock();
   } else {
     if (unsub) { unsub(); unsub = null; }
     if (unsubCats) { unsubCats(); unsubCats = null; }
@@ -289,6 +289,7 @@ onAuthStateChanged(auth, (user) => {
     items = []; cats = []; meals = []; recipes = []; itemsLoaded = catsLoaded = false;
     $("appView").classList.add("hidden");
     $("loginView").classList.remove("hidden");
+    syncWakeLock();
   }
 });
 
@@ -381,7 +382,7 @@ function safeRender() {
   const a = document.activeElement;
   const typing = a && $("list").contains(a)
     && ((a.tagName === "INPUT" && (a.type === "text" || a.type === "search")) || a.tagName === "TEXTAREA")
-    && (["edit", "meals", "recipes"].includes(mode) || a.classList.contains("qty"));
+    && (["edit", "meals", "recipes"].includes(mode) || a.classList.contains("qty") || a.value !== "");
   if (typing) { pendingRender = true; return; }
   render();
 }
@@ -407,16 +408,19 @@ async function ensureCategories() {
 // Group names in display order (unknown item categories are appended)
 function groupNames() {
   const names = cats.map((c) => c.name);
-  items.forEach((i) => { if (i.category && !names.includes(i.category)) names.push(i.category); });
+  items.forEach((i) => { const c = i.mealId ? i.mealCategory : i.category; if (c && !names.includes(c)) names.push(c); });
   return names;
 }
 
-async function addItem(text, category, needed = true) {
+// NB: Firestore write promises only settle once the server has answered, i.e. never while offline.
+// So never `await` a write before doing UI work or the next write. Fire it and let the snapshot
+// listeners redraw. Failures still surface through the unhandledrejection handler above.
+function addItem(text, category, needed = true) {
   text = text.trim();
   if (!text) return;
   const inCat = items.filter((i) => i.category === category);
   const order = inCat.length ? Math.max(...inCat.map((i) => i.order ?? 0)) + 1 : 0;
-  await addDoc(itemsCol, {
+  return setDoc(doc(itemsCol), {
     text, category, needed, checked: false, order,
     addedBy: (auth.currentUser?.email || "").split("@")[0],
     createdAt: serverTimestamp()
@@ -429,13 +433,40 @@ const toggleNeeded = (it) => upd(it, { needed: !it.needed, checked: false, qty: 
 const toggleChecked = (it) => upd(it, { checked: !it.checked });
 const remove = (it) => deleteDoc(doc(db, "items", it.id));
 
-async function batchOver(list, fn) {
+// All chunks are queued at once (see NB above); the returned promise settles when the server has them all.
+function batchOver(list, fn) {
+  const commits = [];
   for (let i = 0; i < list.length; i += 400) {
     const b = writeBatch(db);
     list.slice(i, i + 400).forEach((it) => fn(b, it));
-    await b.commit();
+    commits.push(b.commit());
   }
+  return Promise.all(commits);
 }
+// Dinners keep their ingredients as {text, category} copies (in meals, recipes and dinner rows on the
+// shopping list). Returns batch operations that rewrite the category wherever fn(ingredient) gives a new one.
+function recatOps(fn) {
+  const ops = [];
+  const remap = (list) => {
+    let hit = false;
+    const out = (list || []).map((x) => {
+      const c = x && typeof x === "object" ? fn(x) : null;
+      if (!c || c === x.category) return x;
+      hit = true;
+      return { ...x, category: c };
+    });
+    return hit ? out : null;
+  };
+  meals.forEach((m) => { const l = remap(m.ingredients); if (l) ops.push((b) => b.update(doc(db, "meals", m.id), { ingredients: l })); });
+  recipes.forEach((r) => { const l = remap(r.ingredients); if (l) ops.push((b) => b.update(doc(db, "recipes", r.id), { ingredients: l })); });
+  items.forEach((i) => {
+    if (!i.mealId) return;
+    const c = fn({ text: i.text, category: i.mealCategory });
+    if (c && c !== i.mealCategory) ops.push((b) => b.update(doc(db, "items", i.id), { mealCategory: c }));
+  });
+  return ops;
+}
+const runOps = (ops) => batchOver(ops, (b, op) => op(b));
 
 // ---------- render ----------
 // edit-view tools
@@ -468,12 +499,11 @@ function render() {
   const recMode = mode === "recipes";
   const mealsMode = mode === "meals";
   $("tabRecipes").classList.toggle("active", recMode);
-  $("search").placeholder = recMode ? "Søk i middager…" : "Søk i alle varer…";
+  $("search").placeholder = recMode ? "Søk i middager…" : edit ? "Søk i alle varer…" : "Søk eller legg til vare…";
   $("tabMeals").classList.toggle("active", mealsMode);
   $("clearMeals").classList.toggle("hidden", !mealsMode);
   $("clearNeeded").classList.toggle("hidden", mealsMode || recMode);
   $("search").classList.toggle("hidden", shop || mealsMode);
-  $("quickForm").classList.toggle("hidden", shop || edit || mealsMode || recMode);
   $("hideDoneLbl").classList.toggle("hidden", !shop);
   $("finishShop").classList.toggle("hidden", !shop);
   $("uncheckAll").classList.toggle("hidden", !shop);
@@ -490,10 +520,6 @@ function render() {
   }
   updateBulk();
 
-  const sel = $("quickCat"); const keep = sel.value;
-  sel.innerHTML = names.map((c) => `<option>${esc(c)}</option>`).join("");
-  if (names.includes(keep)) sel.value = keep;
-
   $("seedBtn").classList.toggle("hidden", items.length > 0);
   const empty = $("empty");
   empty.classList.toggle("hidden", !(items.length === 0 || (shop && neededCount === 0)));
@@ -504,6 +530,14 @@ function render() {
   const root = $("list");
   root.innerHTML = "";
   if (edit && showDups) root.appendChild(dupPanel());
+  if (mode === "plan" && q) { const p = addNewPanel(names); if (p) root.appendChild(p); }
+  if (shop && neededCount) {
+    const done = items.filter((i) => i.needed && i.checked).length;
+    const p = document.createElement("div");
+    p.className = "progress";
+    p.innerHTML = `${done} av ${neededCount} i kurven<div class="bar"><i style="width:${Math.round(100 * done / neededCount)}%"></i></div>`;
+    root.appendChild(p);
+  }
   names.forEach((cat, gi) => {
     const all = byCat.get(cat);
     if (edit && filterCat && cat !== filterCat) return;
@@ -603,7 +637,10 @@ function render() {
         const qi = li.querySelector("input.qty");
         if (qi) qi.addEventListener("change", () => upd(it, { qty: qi.value.trim() }));
         if (shop) li.querySelector(".x").addEventListener("click", () => {
+          const { id, ...data } = it;
           if (it.mealId) remove(it); else upd(it, { needed: false, checked: false, qty: "" });
+          toast(`«${it.text}» fjernet`, () => (it.mealId ? setDoc(doc(db, "items", id), data)
+            : upd(it, { needed: true, checked: !!it.checked, qty: it.qty || "" })));
         });
       }
       ul.appendChild(li);
@@ -619,12 +656,13 @@ function render() {
     root.appendChild(d);
   });
 
-  if (shop && neededCount) {
-    const cb = document.createElement("button");
-    cb.type = "button"; cb.className = "clearbtn";
-    cb.textContent = "🗑 Tøm handlelisten";
-    cb.addEventListener("click", () => $("clearNeeded").click());
-    root.appendChild(cb);
+  const inCart = shop ? items.filter((i) => i.needed && i.checked).length : 0;
+  if (inCart) {   // "Tøm handlelisten" (removes everything) lives in the ⋯ menu only
+    const fb = document.createElement("button");
+    fb.type = "button"; fb.className = "finishbtn primary";
+    fb.textContent = `✓ Ferdig handlet (fjern ${inCart} avkryssede)`;
+    fb.addEventListener("click", () => $("finishShop").click());
+    root.appendChild(fb);
   }
 
   if (edit && !q) {
@@ -634,6 +672,59 @@ function render() {
     f.addEventListener("submit", (e) => { e.preventDefault(); const inp = f.querySelector("input"); addGroup(inp.value); inp.value = ""; });
     root.appendChild(f);
   }
+}
+
+// ---------- combined search / add (Planlegg) ----------
+const findItem = (text) => { const n = normName(text); return n ? items.find((i) => !i.mealId && i.category && normName(i.text) === n) : null; };
+const newItemCat = (names) => { const last = localStorage.getItem("lastNewCat"); return names.includes(last) ? last : names[0]; };
+function addNew(text) {
+  const names = groupNames();
+  if (!names.length) return;
+  addItem(text, newItemCat(names));
+  toast(`«${text.trim()}» lagt på handlelisten`);
+  $("search").value = "";
+  render();
+}
+// Enter in the search field: put the matching item on the shopping list, or create it if it does not exist.
+function searchEnter() {
+  const q = $("search").value.trim();
+  if (mode !== "plan" || !q) return;
+  const ex = findItem(q);
+  if (!ex) { addNew(q); return; }
+  if (!ex.needed) upd(ex, { needed: true, checked: false });
+  toast(ex.needed ? `«${ex.text}» står allerede på handlelisten` : `«${ex.text}» lagt på handlelisten`);
+  $("search").value = "";
+  render();
+}
+// Shown above the filtered list while searching: create the item, or pick a product bought at Rema before.
+function addNewPanel(names) {
+  const q = $("search").value.trim(), ql = q.toLocaleLowerCase("nb");
+  if (!names.length) return null;
+  const have = new Set(items.map((i) => normName(i.text || "")));
+  const seen = new Set();
+  const prods = products.filter((p) => p.name && p.name.toLocaleLowerCase("nb").includes(ql))
+    .sort((a, b) => (b.count || 0) - (a.count || 0) || a.name.localeCompare(b.name, "nb"))
+    .filter((p) => { const k = normName(p.name); if (!k || have.has(k) || seen.has(k)) return false; seen.add(k); return true; })
+    .slice(0, 5);
+  const exists = !!findItem(q);
+  if (exists && !prods.length) return null;
+  const box = document.createElement("div");
+  box.className = "addnew";
+  box.innerHTML = `<div class="sugg"><div class="newrow"><span>${exists ? "Forslag legges i:" : `Ny vare «${esc(q)}» i:`}</span>
+    <select aria-label="Kategori">${names.map((n) => `<option>${esc(n)}</option>`).join("")}</select>
+    ${exists ? "" : `<button type="button" class="primary">Legg til</button>`}</div></div>`;
+  const sel = box.querySelector("select"), sugg = box.querySelector(".sugg");
+  sel.value = newItemCat(names);
+  sel.addEventListener("change", () => localStorage.setItem("lastNewCat", sel.value));
+  box.querySelector("button")?.addEventListener("click", () => addNew(q));
+  prods.forEach((p) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.innerHTML = `＋ ${esc(p.name)} <span class="cat">kjøpt ${Number(p.count) || 1}×</span>`;
+    b.addEventListener("click", () => addNew(p.name));
+    sugg.appendChild(b);
+  });
+  return box;
 }
 
 // ---------- dinner planner ----------
@@ -693,14 +784,26 @@ async function saveMealOnly(m) {
   if (ex) { rid = ex.id; b.update(recipeRef(rid), { name: m.name, ingredients: list }); }
   else { const ref = doc(recipesCol); rid = ref.id; b.set(ref, { name: m.name, ingredients: list, recipe: "", createdAt: serverTimestamp() }); }
   b.update(mealRef(m.day), { recipeId: rid });
-  await b.commit();
   toast(ex ? `«${m.name}» oppdatert i Middager` : `«${m.name}» lagret i Middager`);
+  await b.commit();
 }
-function toast(msg) {
-  const t = document.createElement("div");
-  t.className = "toast"; t.textContent = msg;
+// With an undo function the toast gets an «Angre» button and stays a little longer.
+let toastEl = null;
+function toast(msg, undo) {
+  toastEl?.remove();
+  const t = toastEl = document.createElement("div");
+  t.className = "toast"; t.setAttribute("role", "status");
+  const s = document.createElement("span");
+  s.textContent = msg;
+  t.appendChild(s);
+  if (undo) {
+    const b = document.createElement("button");
+    b.type = "button"; b.textContent = "Angre";
+    b.addEventListener("click", () => { t.remove(); undo(); });
+    t.appendChild(b);
+  }
   document.body.appendChild(t);
-  setTimeout(() => t.remove(), 2200);
+  setTimeout(() => t.remove(), undo ? 6000 : 2200);
 }
 async function reopenMeal(m) {
   const mine = mealItems(m);
@@ -719,9 +822,9 @@ function ingredientPicker(ing, save) {
   wrap.innerHTML = `<input type="search" placeholder="Søk etter vare eller skriv ny…" autocomplete="off"><div class="sugg"></div>`;
   const inp = wrap.querySelector("input"), box = wrap.querySelector(".sugg");
   const has = (text, cat) => ing.some((x) => x.text.toLocaleLowerCase("nb") === text.toLocaleLowerCase("nb") && x.category === cat);
-  const add = async (text, cat, isNew) => {
-    if (isNew) await addItem(text, cat, false);   // becomes a permanent item, not on the shopping list yet
-    await save([...ing, { text, category: cat }]);
+  const add = (text, cat, isNew) => {
+    if (isNew) addItem(text, cat, false);   // becomes a permanent item, not on the shopping list yet
+    return save([...ing, { text, category: cat }]);
   };
   const refresh = () => {
     const q = inp.value.trim(), ql = q.toLocaleLowerCase("nb");
@@ -759,16 +862,18 @@ async function planRecipe(r, day, switchTab = true) {
   const b = writeBatch(db);
   if (old) mealItems(old).forEach((i) => b.delete(doc(db, "items", i.id)));
   b.set(mealRef(day), { day, name: r.name, ingredients: normIng(r.ingredients), planned: false, recipeId: r.id });
-  await b.commit();
+  const done = b.commit();
   if (switchTab) setMode("meals");
+  await done;
 }
 async function addRecipe(name) {
   name = name.trim();
   if (!name) return;
   const ex = recipes.find((r) => normName(r.name) === normName(name));
   if (ex) { openRecipes.add(ex.id); alert("Det finnes allerede en middag med det navnet."); render(); return; }
-  const ref = await addDoc(recipesCol, { name, ingredients: [], recipe: "", createdAt: serverTimestamp() });
+  const ref = doc(recipesCol);
   openRecipes.add(ref.id);
+  await setDoc(ref, { name, ingredients: [], recipe: "", createdAt: serverTimestamp() });
 }
 async function deleteRecipe(r) {
   if (!confirm(`Slette «${r.name}» fra middagsdatabasen? Varer i varelisten beholdes.`)) return;
@@ -816,12 +921,13 @@ async function saveImport() {
     const k = x.category + "|" + normName(x.text);
     if (seen.has(k)) continue;
     seen.add(k);
-    if (!existing(x)) await addItem(x.text, x.category, false);
+    if (!existing(x)) addItem(x.text, x.category, false);
   }
-  const ref = await addDoc(recipesCol, { name, ingredients: ings, recipe: d.steps, source: d.source, createdAt: serverTimestamp() });
+  const ref = doc(recipesCol);
   openRecipes.add(ref.id);
   importDraft = null;
   render();
+  await setDoc(ref, { name, ingredients: ings, recipe: d.steps, source: d.source, createdAt: serverTimestamp() });
 }
 function importPanel() {
   const box = document.createElement("div");
@@ -1128,14 +1234,18 @@ async function bulkMove() {
   if (!target || !moving.length) return;
   const inTarget = items.filter((i) => i.category === target);
   let order = inTarget.length ? Math.max(...inTarget.map((i) => i.order ?? 0)) + 1 : 0;
-  await batchOver(moving, (b, it) => b.update(doc(db, "items", it.id), { category: target, order: order++ }));
+  const moved = new Set(moving.map(itemKey));
+  const ops = moving.map((it) => { const o = order++; return (b) => b.update(doc(db, "items", it.id), { category: target, order: o }); });
+  const done = runOps([...ops, ...recatOps((x) => (moved.has(itemKey(x)) ? target : null))]);
   selected.clear(); render();
+  await done;
 }
 async function bulkDelete() {
   const del = items.filter((i) => selected.has(i.id));
   if (!del.length || !confirm(`Slette ${del.length} varer for godt?`)) return;
-  await batchOver(del, (b, it) => b.delete(doc(db, "items", it.id)));
+  const done = batchOver(del, (b, it) => b.delete(doc(db, "items", it.id)));
   selected.clear(); render();
+  await done;
 }
 
 // ---------- drag & drop reordering (pointer events: mouse + touch) ----------
@@ -1205,7 +1315,8 @@ function dragSort(e, el, container, onDone, prep) {
     undo?.();
     dragActive = false;
     pendingRender = false;
-    if (save) Promise.resolve(onDone(ids)).finally(() => render()); else render();
+    // The local snapshot redraws right after the write; the timer only covers "nothing changed".
+    if (save) { onDone(ids); setTimeout(safeRender, 300); } else render();
   };
   const up = (ev) => { if (ev.pointerId === pid) finish(true); }, cancel = (ev) => { if (ev.pointerId === pid) finish(false); };
   window.addEventListener("pointermove", move);
@@ -1242,17 +1353,24 @@ async function renameGroup(oldName, newName) {
   if (!newName || newName === oldName) { render(); return; }
   if (groupNames().some((n) => n !== oldName && n.toLocaleLowerCase("nb") === newName.toLocaleLowerCase("nb"))) { alert("Det finnes allerede en gruppe med det navnet."); render(); return; }
   const c = cats.find((x) => x.name === oldName);
-  const affected = items.filter((i) => i.category === oldName);
-  const b = writeBatch(db);
-  b.set(doc(catsCol, c?.id || slug(newName)), { name: newName, order: groupNames().indexOf(oldName) });
-  affected.slice(0, 450).forEach((it) => b.update(doc(db, "items", it.id), { category: newName }));
-  await b.commit();
+  const order = groupNames().indexOf(oldName);
+  const ops = [(b) => b.set(doc(catsCol, c?.id || slug(newName)), { name: newName, order })];
+  items.forEach((it) => { if (it.category === oldName) ops.push((b) => b.update(doc(db, "items", it.id), { category: newName })); });
+  // dinners (week plan, saved dinners, dinner rows on the shopping list) carry their own copy of the group name
+  ops.push(...recatOps((x) => (x.category === oldName ? newName : null)));
+  await runOps(ops);
 }
 async function deleteGroup(name, count) {
   if (count > 0) { alert(`«${name}» har ${count} varer. Flytt eller slett dem først.`); return; }
-  if (!confirm(`Slette gruppen «${name}»?`)) return;
+  // Dinner ingredients that still point at this group follow their item, or go to the first other group.
+  const fallback = groupNames().find((n) => n !== name);
+  const home = (x) => items.find((i) => !i.mealId && i.category && i.category !== name && normName(i.text) === normName(x.text))?.category || fallback;
+  const ops = recatOps((x) => (x.category === name ? home(x) : null));
+  if (ops.length && !fallback) { alert(`«${name}» brukes av middager og er den eneste gruppen.`); return; }
+  if (!confirm(`Slette gruppen «${name}»?` + (ops.length ? `\n\nMiddagsingredienser som ligger i gruppen flyttes til gruppen varen ligger i nå (ellers «${fallback}»).` : ""))) return;
   const c = cats.find((x) => x.name === name);
-  if (c) await deleteDoc(doc(catsCol, c.id));
+  if (c) ops.push((b) => b.delete(doc(catsCol, c.id)));
+  await runOps(ops);
 }
 // Items: rewrite order 0..n for a group's list so swaps are stable
 async function moveItem(list, i, dir) {
@@ -1266,8 +1384,10 @@ async function moveItemToGroup(it, group) {
   if (group === it.category) return;
   const inTarget = items.filter((i) => i.category === group);
   const order = inTarget.length ? Math.max(...inTarget.map((i) => i.order ?? 0)) + 1 : 0;
-  await upd(it, { category: group, order });
+  const key = itemKey(it);
+  await runOps([(b) => b.update(doc(db, "items", it.id), { category: group, order }), ...recatOps((x) => (itemKey(x) === key ? group : null))]);
 }
+const itemKey = (x) => x.category + "|" + normName(x.text || "");
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 // ---------- backup / restore ----------
@@ -1372,17 +1492,25 @@ $("remaFile").addEventListener("change", (e) => {
   const f = e.target.files[0]; e.target.value = "";
   if (f) importRema(f).catch((err) => alert("Import feilet: " + err.message));
 });
-$("quickForm").addEventListener("submit", (e) => {
-  e.preventDefault();
-  addItem($("quickText").value, $("quickCat").value);
-  $("quickText").value = "";
-});
+$("search").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); searchEnter(); } });
 const setAllOpen = (open) => document.querySelectorAll("#list details").forEach((d) => { d.open = open; });
 $("expandAll").addEventListener("click", () => setAllOpen(true));
 $("collapseAll").addEventListener("click", () => setAllOpen(false));
 $("menuBtn").addEventListener("click", () => $("menu").classList.toggle("hidden"));
 $("hideDone").addEventListener("change", () => { localStorage.setItem("hideDone", $("hideDone").checked ? "1" : "0"); render(); });
-const setMode = (m) => { openRecipes.clear(); mode = m; localStorage.setItem("mode", m); window.scrollTo(0, 0); render(); };
+const setMode = (m) => { openRecipes.clear(); mode = m; localStorage.setItem("mode", m); window.scrollTo(0, 0); render(); syncWakeLock(); };
+// Keep the screen on while shopping (released automatically when the app is hidden, so re-request on return).
+let wakeLock = null;
+async function syncWakeLock() {
+  const want = mode === "shop" && document.visibilityState === "visible" && !!auth.currentUser;
+  try {
+    if (want && !wakeLock && navigator.wakeLock) {
+      const l = wakeLock = await navigator.wakeLock.request("screen");
+      l.addEventListener("release", () => { if (wakeLock === l) wakeLock = null; });
+    } else if (!want && wakeLock) { const l = wakeLock; wakeLock = null; await l.release(); }
+  } catch { wakeLock = null; }   // not supported, or refused (e.g. battery saver)
+}
+document.addEventListener("visibilitychange", syncWakeLock);
 $("tabPlan").addEventListener("click", () => setMode("plan"));
 $("tabShop").addEventListener("click", () => setMode("shop"));
 $("tabEdit").addEventListener("click", () => setMode("edit"));

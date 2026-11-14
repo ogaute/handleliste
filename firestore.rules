@@ -2,8 +2,11 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     // Only the two household accounts may read/write the list.
+    // email_verified stops someone from signing up with one of these addresses and a password
+    // of their own: Google sign-in is verified, a self-made e-mail/password account is not.
     function allowed() {
       return request.auth != null
+        && request.auth.token.email_verified == true
         && request.auth.token.email in [
           "user1@removed",
           "user3@removed"

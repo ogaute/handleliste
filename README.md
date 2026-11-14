@@ -39,6 +39,14 @@ Firebase-konsollen → Authentication → Sign-in method:
 
 Når Google-innlogging fungerer for begge kan du slå av **Email/Password** der, så passord-innlogging ikke lenger er mulig.
 
+Reglene krever `email_verified`. Google-innlogging er alltid verifisert. En e-post/passord-konto må ha bekreftet
+e-postadressen for å få tilgang, så ingen kan registrere seg selv med en av de to adressene.
+
+## Oppdatere Firebase-SDK
+
+Versjonsnummeret står to steder og må være likt: importene øverst i skriptet i `index.html` og `SDK` i `sw.js`
+(som lagrer SDK-filene slik at appen starter uten nett). Øk også `CACHE` i `sw.js`.
+
 ## Varer fra Rema 1000 (forslag)
 
 Produkter du har handlet hos Rema kan brukes som forslag når du skriver en ny vare.
