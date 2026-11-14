@@ -268,6 +268,7 @@ let importDraft = null;   // import panel state: {stage:'paste'|'preview', ...}
 let recipes = [];       // saved dinners: [{id, name, ingredients[], recipe}]
 let unsub = null, unsubCats = null, unsubMeals = null, unsubRecipes = null, unsubProducts = null;
 let itemsLoaded = false, catsLoaded = false, pendingRender = false;
+let itemsSynced = false;   // the server (not just the local cache) has answered for items
 let seedOrder = [];
 const seedOrderReady = fetch("seed.json").then((r) => r.json()).then((s) => { seedOrder = s.map((c) => c.name); }).catch(() => {});
 const openState = JSON.parse(localStorage.getItem("openCats") || "{}");
@@ -286,7 +287,7 @@ onAuthStateChanged(auth, (user) => {
     if (unsubMeals) { unsubMeals(); unsubMeals = null; }
     if (unsubRecipes) { unsubRecipes(); unsubRecipes = null; }
     if (unsubProducts) { unsubProducts(); unsubProducts = null; }
-    items = []; cats = []; meals = []; recipes = []; itemsLoaded = catsLoaded = false;
+    items = []; cats = []; meals = []; recipes = []; itemsLoaded = catsLoaded = itemsSynced = false;
     $("appView").classList.add("hidden");
     $("loginView").classList.remove("hidden");
     syncWakeLock();
@@ -343,6 +344,7 @@ function subscribe() {
   unsub = onSnapshot(itemsCol, { includeMetadataChanges: true }, (snap) => {
     items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     itemsLoaded = true;
+    if (!snap.metadata.fromCache) itemsSynced = true;
     const st = $("status");
     const offline = snap.metadata.fromCache && !navigator.onLine;
     st.textContent = offline ? "frakoblet" : (snap.metadata.hasPendingWrites ? "synker…" : "live");
@@ -520,11 +522,12 @@ function render() {
   }
   updateBulk();
 
-  $("seedBtn").classList.toggle("hidden", items.length > 0);
+  // An empty cache on a new device is not an empty list: offering the start list then would duplicate everything.
+  $("seedBtn").classList.toggle("hidden", items.length > 0 || !itemsSynced);
   const empty = $("empty");
   empty.classList.toggle("hidden", !(items.length === 0 || (shop && neededCount === 0)));
   empty.textContent = items.length === 0
-    ? "Listen er tom. Åpne «⋯» og velg «Last inn startliste»."
+    ? (itemsSynced ? "Listen er tom. Åpne «⋯» og velg «Last inn startliste»." : "Henter listen…")
     : "Handlelisten er tom. Gå til «Planlegg» og trykk på varene du trenger.";
 
   const root = $("list");
@@ -765,13 +768,13 @@ async function finishMeal(m) {
       needed: true, checked: false, qty: ing.qty || "", order: master?.order ?? 0, addedBy: who, createdAt: serverTimestamp()
     });
   });
-  // Save to the dinner database (unless a saved dinner with this name already exists)
+  // Save to the dinner database: update the saved dinner if there is one, otherwise create it
   let rid = recipes.find((r) => r.id === m.recipeId)?.id || recipes.find((r) => normName(r.name) === normName(m.name))?.id;
   if (!rid) {
     const ref = doc(recipesCol);
     b.set(ref, { name: m.name, ingredients: list, recipe: "", createdAt: serverTimestamp() });
     rid = ref.id;
-  }
+  } else b.update(recipeRef(rid), { name: m.name, ingredients: list });
   b.update(mealRef(m.day), { planned: true, recipeId: rid });
   await b.commit();
 }
@@ -881,18 +884,20 @@ async function deleteRecipe(r) {
 }
 
 // ---------- import (from hent_oppskrift.py) ----------
+// Returns {item, exact}. Only an exact match may replace the ingredient; a similar item
+// ("melk" inside "kokosmelk") is just a hint for which category to suggest.
 function matchItem(text) {
   const n = normName(text);
   if (!n) return null;
   const cands = items.filter((i) => !i.mealId && i.category);
   const exact = cands.find((i) => normName(i.text) === n);
-  if (exact) return exact;
+  if (exact) return { item: exact, exact: true };
   let best = null;
   cands.forEach((i) => {
     const x = normName(i.text);
     if (x.length >= 4 && n.length >= 4 && (n.includes(x) || x.includes(n)) && (!best || x.length > normName(best.text).length)) best = i;
   });
-  return best;
+  return best ? { item: best, exact: false } : null;
 }
 function parseImport(raw) {
   let j;
@@ -903,7 +908,7 @@ function parseImport(raw) {
   const ingredients = j.ingredients.map((x) => {
     const text = String(x.text ?? x.raw ?? "").trim();
     const m = matchItem(text);
-    return { qty: String(x.qty ?? ""), text: m ? m.text : text, category: m ? m.category : fallback };
+    return { qty: String(x.qty ?? ""), text: m?.exact ? m.item.text : text, category: m ? m.item.category : fallback };
   }).filter((x) => x.text);
   const meta = [j.servings, j.time].filter(Boolean).join(" · ");
   const steps = (Array.isArray(j.steps) ? j.steps : []).map((t, i) => `${i + 1}. ${t}`).join("\n");
@@ -969,7 +974,7 @@ function importPanel() {
     status();
     q.addEventListener("input", () => { x.qty = q.value; });
     t.addEventListener("input", () => { x.text = t.value; status(); });
-    t.addEventListener("change", () => { const m = matchItem(x.text); if (m) { x.text = m.text; x.category = m.category; render(); } });
+    t.addEventListener("change", () => { const m = matchItem(x.text); if (m?.exact) { x.text = m.item.text; x.category = m.item.category; render(); } });
     sel.addEventListener("change", () => { x.category = sel.value; status(); });
     row.querySelector("button").addEventListener("click", () => { d.ingredients.splice(idx, 1); render(); });
     box.appendChild(row);
@@ -1326,10 +1331,18 @@ function dragSort(e, el, container, onDone, prep) {
 
 // ---------- edit operations ----------
 // Persist a full group order (rewrites order 0..n so there are never ties)
+// "Kjøtt & fisk" and "Kjøtt/fisk" give the same slug; never reuse an id that belongs to another group.
+function freeCatId(name, used) {
+  let id = slug(name);
+  for (let k = 2; used.has(id); k++) id = slug(name) + "-" + k;
+  used.add(id);
+  return id;
+}
 async function saveGroupOrder(names) {
   const known = new Map(cats.map((c) => [c.name, c.id]));
+  const used = new Set(cats.map((c) => c.id));
   await batchOver(names, (b, n) => {
-    const id = known.get(n) || slug(n);
+    const id = known.get(n) || freeCatId(n, used);
     b.set(doc(catsCol, id), { name: n, order: names.indexOf(n) });
   });
 }
@@ -1354,7 +1367,7 @@ async function renameGroup(oldName, newName) {
   if (groupNames().some((n) => n !== oldName && n.toLocaleLowerCase("nb") === newName.toLocaleLowerCase("nb"))) { alert("Det finnes allerede en gruppe med det navnet."); render(); return; }
   const c = cats.find((x) => x.name === oldName);
   const order = groupNames().indexOf(oldName);
-  const ops = [(b) => b.set(doc(catsCol, c?.id || slug(newName)), { name: newName, order })];
+  const ops = [(b) => b.set(doc(catsCol, c?.id || freeCatId(newName, new Set(cats.map((x) => x.id)))), { name: newName, order })];
   items.forEach((it) => { if (it.category === oldName) ops.push((b) => b.update(doc(db, "items", it.id), { category: newName })); });
   // dinners (week plan, saved dinners, dinner rows on the shopping list) carry their own copy of the group name
   ops.push(...recatOps((x) => (x.category === oldName ? newName : null)));
@@ -1423,11 +1436,11 @@ const bkIng = (v) => typeof v === "string" ? v.length <= 300
   : v && typeof v === "object" && BK.str(300)(v.text) && (v.category == null || BK.str(100)(v.category)) && (v.qty == null || BK.str(100)(v.qty));
 const BK_SCHEMA = {
   items: { req: ["text"], f: { text: BK.str(300), category: bkOpt(BK.str(100)), needed: BK.bool, checked: BK.bool, order: BK.num, qty: BK.str(100),
-    mealId: BK.str(100), mealName: BK.str(300), mealCategory: bkOpt(BK.str(100)), day: BK.num, addedBy: BK.str(100), createdAt: BK.ts } },
+    mealId: BK.str(100), mealName: BK.str(300), mealCategory: bkOpt(BK.str(100)), day: BK.num, addedBy: BK.str(100), createdAt: bkOpt(BK.ts) } },
   categories: { req: ["name"], f: { name: BK.str(100), order: BK.num } },
   meals: { req: ["name", "day"], f: { name: BK.str(300), day: (v) => Number.isInteger(v) && v >= 0 && v <= 6, planned: BK.bool, recipeId: bkOpt(BK.str(100)),
     ingredients: (v) => Array.isArray(v) && v.length <= 300 && v.every(bkIng) } },
-  recipes: { req: ["name"], f: { name: BK.str(300), recipe: BK.str(50000), source: BK.str(2000), createdAt: BK.ts,
+  recipes: { req: ["name"], f: { name: BK.str(300), recipe: BK.str(50000), source: BK.str(2000), createdAt: bkOpt(BK.ts),
     ingredients: (v) => Array.isArray(v) && v.length <= 300 && v.every(bkIng) } },
 };
 // Returns a list of problems (empty = file is safe to restore). Nothing is written before this passes.
@@ -1457,8 +1470,6 @@ function validateBackup(j) {
     });
   }
   if (total > 20000) add("For mange dokumenter (maks 20000).");
-  const cats = new Set((j.collections.categories ?? []).map((d) => d?.data?.name));
-  (j.collections.items ?? []).forEach((d, n) => { const k = d?.data?.category; if (k && !cats.has(k)) add(`items #${n + 1}: kategorien «${k}» finnes ikke i filen.`); });
   return errs;
 }
 async function restoreFromFile(file) {
@@ -1472,12 +1483,9 @@ async function restoreFromFile(file) {
   if (!confirm(`Gjenopprette ${all.length} dokumenter fra ${j.exportedAt?.slice(0, 10) || "ukjent dato"}?
 
 Eksisterende dokumenter med samme id overskrives. Dokumenter som er opprettet etter sikkerhetskopien blir liggende.`)) return;
-  for (let i = 0; i < all.length; i += 400) {
-    const b = writeBatch(db);
-    all.slice(i, i + 400).forEach((d) => b.set(doc(db, d.c, d.id), decVal(d.data)));
-    await b.commit();
-  }
+  const done = batchOver(all, (b, d) => b.set(doc(db, d.c, d.id), decVal(d.data)));
   toast(`Gjenopprettet ${all.length} dokumenter`);
+  await done;
 }
 
 // ---------- UI wiring ----------
@@ -1498,7 +1506,7 @@ $("expandAll").addEventListener("click", () => setAllOpen(true));
 $("collapseAll").addEventListener("click", () => setAllOpen(false));
 $("menuBtn").addEventListener("click", () => $("menu").classList.toggle("hidden"));
 $("hideDone").addEventListener("change", () => { localStorage.setItem("hideDone", $("hideDone").checked ? "1" : "0"); render(); });
-const setMode = (m) => { openRecipes.clear(); mode = m; localStorage.setItem("mode", m); window.scrollTo(0, 0); render(); syncWakeLock(); };
+const setMode = (m) => { openRecipes.clear(); $("search").value = ""; mode = m; localStorage.setItem("mode", m); window.scrollTo(0, 0); render(); syncWakeLock(); };
 // Keep the screen on while shopping (released automatically when the app is hidden, so re-request on return).
 let wakeLock = null;
 async function syncWakeLock() {
@@ -1544,7 +1552,7 @@ $("clearMeals").addEventListener("click", async () => {
   await batchOver(refs, (batch, ref) => batch.delete(ref));
 });
 $("seedBtn").addEventListener("click", async () => {
-  if (items.length) return;
+  if (items.length || !itemsSynced) return;
   const seed = await (await fetch("seed.json")).json();
   const rows = [];
   seed.forEach((c) => c.items.forEach((it, i) => rows.push({ text: it.text, category: c.name, needed: false, checked: false, order: i })));
