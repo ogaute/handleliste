@@ -197,7 +197,8 @@
     </div>
     <input type="search" id="search" class="search" placeholder="Søk i alle varer…" autocomplete="off">
     <form class="quickadd" id="quickForm">
-      <input type="text" id="quickText" placeholder="Legg til ny vare…" autocomplete="off">
+      <input type="text" id="quickText" placeholder="Legg til ny vare…" autocomplete="off" list="suggest">
+      <datalist id="suggest"></datalist>
       <select id="quickCat" aria-label="Kategori"></select>
       <button class="primary" type="submit">+</button>
     </form>
@@ -208,6 +209,11 @@
       <button id="clearNeeded">Tøm handlelisten</button>
       <button id="clearMeals">Tøm ukeplanen</button>
       <button id="seedBtn" class="hidden">Last inn startliste</button>
+      <button id="remaBtn">🛍 Importer Rema-produkter</button>
+      <input type="file" id="remaFile" accept=".json,application/json" class="hidden">
+      <button id="backupBtn">💾 Sikkerhetskopi (last ned)</button>
+      <button id="restoreBtn">♻️ Gjenopprett fra fil</button>
+      <input type="file" id="restoreFile" accept=".json,application/json" class="hidden">
       <button id="logout">Logg ut</button>
     </div>
   </header>
@@ -238,7 +244,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/fireba
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, GoogleAuthProvider, signInWithPopup }
   from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-  collection, onSnapshot, addDoc, setDoc, updateDoc, deleteDoc, doc, writeBatch, serverTimestamp }
+  collection, getDocs, Timestamp, onSnapshot, addDoc, setDoc, updateDoc, deleteDoc, doc, writeBatch, serverTimestamp }
   from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
@@ -253,13 +259,15 @@ const itemsCol = collection(db, "items");
 const catsCol = collection(db, "categories");
 const mealsCol = collection(db, "meals");
 const recipesCol = collection(db, "recipes");
+const productsCol = collection(db, "products");
 let items = [];
+let products = [];      // bought at Rema (import via hent_rema.py); used for suggestions
 let cats = [];          // [{id, name, order}] from Firestore
 let meals = [];         // [{id, day 0-6, name, ingredients[], planned}]
 const openRecipes = new Set();   // expanded dinners; cleared whenever you leave/enter the tab
 let importDraft = null;   // import panel state: {stage:'paste'|'preview', ...}
 let recipes = [];       // saved dinners: [{id, name, ingredients[], recipe}]
-let unsub = null, unsubCats = null, unsubMeals = null, unsubRecipes = null;
+let unsub = null, unsubCats = null, unsubMeals = null, unsubRecipes = null, unsubProducts = null;
 let itemsLoaded = false, catsLoaded = false, pendingRender = false;
 let seedOrder = [];
 const seedOrderReady = fetch("seed.json").then((r) => r.json()).then((s) => { seedOrder = s.map((c) => c.name); }).catch(() => {});
@@ -277,6 +285,7 @@ onAuthStateChanged(auth, (user) => {
     if (unsubCats) { unsubCats(); unsubCats = null; }
     if (unsubMeals) { unsubMeals(); unsubMeals = null; }
     if (unsubRecipes) { unsubRecipes(); unsubRecipes = null; }
+    if (unsubProducts) { unsubProducts(); unsubProducts = null; }
     items = []; cats = []; meals = []; recipes = []; itemsLoaded = catsLoaded = false;
     $("appView").classList.add("hidden");
     $("loginView").classList.remove("hidden");
@@ -317,6 +326,11 @@ function subscribe() {
   if (unsubCats) unsubCats();
   if (unsubMeals) unsubMeals();
   if (unsubRecipes) unsubRecipes();
+  if (unsubProducts) unsubProducts();
+  unsubProducts = onSnapshot(productsCol, (snap) => {
+    products = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    updateSuggestions();
+  }, (err) => console.error("products:", err));   // missing rules just means no suggestions
   unsubRecipes = onSnapshot(recipesCol, (snap) => {
     recipes = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     safeRender();
@@ -333,6 +347,7 @@ function subscribe() {
     st.textContent = offline ? "frakoblet" : (snap.metadata.hasPendingWrites ? "synker…" : "live");
     st.className = "status " + (offline ? "off" : "on");
     ensureCategories();
+    updateSuggestions();
     safeRender();
   }, (err) => {
     $("status").textContent = "ingen tilgang";
@@ -597,7 +612,7 @@ function render() {
     if (!shop) {
       const f = document.createElement("form");
       f.className = "add";
-      f.innerHTML = `<input type="text" placeholder="Ny vare i ${esc(cat)}…" autocomplete="off"><button type="submit">+</button>`;
+      f.innerHTML = `<input type="text" placeholder="Ny vare i ${esc(cat)}…" autocomplete="off" list="suggest"><button type="submit">+</button>`;
       f.addEventListener("submit", (e) => { e.preventDefault(); const inp = f.querySelector("input"); addItem(inp.value, cat, !edit); inp.value = ""; });
       d.appendChild(f);
     }
@@ -1019,6 +1034,34 @@ function renderMeals() {
 }
 
 // ---------- smart edit tools ----------
+// Suggestions: products bought at Rema that are not already an item, most-bought first.
+function updateSuggestions() {
+  const dl = document.getElementById("suggest");
+  if (!dl) return;
+  const have = new Set(items.map((i) => normName(i.text || "")));
+  const seen = new Set();
+  const list = products.filter((p) => p.name).sort((a, b) => (b.count || 0) - (a.count || 0) || a.name.localeCompare(b.name, "nb"))
+    .filter((p) => { const k = normName(p.name); if (!k || have.has(k) || seen.has(k)) return false; seen.add(k); return true; })
+    .slice(0, 800);
+  dl.replaceChildren(...list.map((p) => { const o = document.createElement("option"); o.value = p.name; return o; }));
+}
+async function importRema(file) {
+  const data = JSON.parse(await file.text());
+  if (!Array.isArray(data) || !data.every((p) => p && typeof p.name === "string")) throw new Error("Ikke en gyldig rema_produkter.json");
+  const rows = data.map((p) => ({
+    id: /^[0-9]{8,14}$/.test(p.ean || "") ? p.ean : "n-" + normName(p.name),
+    name: p.name.trim(), ean: p.ean || "", group: p.group || "", count: Number(p.count) || 1,
+    lastBought: p.lastBought || "", lastPrice: typeof p.lastPrice === "number" ? p.lastPrice : null
+  })).filter((r) => r.id !== "n-" && r.name);
+  if (!rows.length) throw new Error("Ingen produkter i filen");
+  const ids = new Set(rows.map((r) => r.id));
+  const stale = products.filter((p) => !ids.has(p.id));
+  if (stale.length && !confirm(`Erstatt ${products.length} eksisterende Rema-produkter med ${rows.length} nye? ${stale.length} gamle fjernes. Handlelisten påvirkes ikke.`)) return;
+  // Write new first, then delete leftovers, so a failure leaves extras rather than a gap.
+  await batchOver(rows, (b, r) => { const { id, ...rest } = r; b.set(doc(productsCol, id), rest); });
+  await batchOver(stale, (b, p) => b.delete(doc(productsCol, p.id)));
+  alert(`Importerte ${rows.length} Rema-produkter` + (stale.length ? `, fjernet ${stale.length} gamle` : "") + ". De dukker opp som forslag når du skriver en ny vare.");
+}
 const normName = (t) => t.toLocaleLowerCase("nb").replace(/[^a-z0-9æøå]/g, "");
 function lev1(a, b) {   // true if edit distance <= 1
   if (a === b) return true;
@@ -1227,7 +1270,108 @@ async function moveItemToGroup(it, group) {
 }
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+// ---------- backup / restore ----------
+const BACKUP_COLS = ["items", "categories", "meals", "recipes"];
+const encVal = (v) => v instanceof Timestamp ? { __ts: [v.seconds, v.nanoseconds] }
+  : Array.isArray(v) ? v.map(encVal)
+  : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, encVal(x)])) : v;
+const decVal = (v) => v && typeof v === "object" && !Array.isArray(v)
+  ? (v.__ts ? new Timestamp(v.__ts[0], v.__ts[1]) : Object.fromEntries(Object.entries(v).map(([k, x]) => [k, decVal(x)])))
+  : Array.isArray(v) ? v.map(decVal) : v;
+async function backupDownload() {
+  const out = { format: "handleliste-backup", version: 1, exportedAt: new Date().toISOString(), collections: {} };
+  for (const c of BACKUP_COLS) {
+    const snap = await getDocs(collection(db, c));
+    out.collections[c] = snap.docs.map((d) => ({ id: d.id, data: encVal(d.data()) }));
+  }
+  const n = Object.values(out.collections).reduce((a, l) => a + l.length, 0);
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(out, null, 1)], { type: "application/json" }));
+  a.download = `handleliste-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  toast(`Sikkerhetskopi lastet ned (${n} dokumenter)`);
+}
+const BK = {
+  str: (n) => (v) => typeof v === "string" && v.length <= n,
+  num: (v) => Number.isFinite(v),
+  bool: (v) => typeof v === "boolean",
+  ts: (v) => v?.__ts && v.__ts.length === 2 && v.__ts.every(Number.isInteger),
+};
+const bkOpt = (f) => (v) => v == null || f(v);
+const bkIng = (v) => typeof v === "string" ? v.length <= 300
+  : v && typeof v === "object" && BK.str(300)(v.text) && (v.category == null || BK.str(100)(v.category)) && (v.qty == null || BK.str(100)(v.qty));
+const BK_SCHEMA = {
+  items: { req: ["text"], f: { text: BK.str(300), category: bkOpt(BK.str(100)), needed: BK.bool, checked: BK.bool, order: BK.num, qty: BK.str(100),
+    mealId: BK.str(100), mealName: BK.str(300), mealCategory: bkOpt(BK.str(100)), day: BK.num, addedBy: BK.str(100), createdAt: BK.ts } },
+  categories: { req: ["name"], f: { name: BK.str(100), order: BK.num } },
+  meals: { req: ["name", "day"], f: { name: BK.str(300), day: (v) => Number.isInteger(v) && v >= 0 && v <= 6, planned: BK.bool, recipeId: bkOpt(BK.str(100)),
+    ingredients: (v) => Array.isArray(v) && v.length <= 300 && v.every(bkIng) } },
+  recipes: { req: ["name"], f: { name: BK.str(300), recipe: BK.str(50000), source: BK.str(2000), createdAt: BK.ts,
+    ingredients: (v) => Array.isArray(v) && v.length <= 300 && v.every(bkIng) } },
+};
+// Returns a list of problems (empty = file is safe to restore). Nothing is written before this passes.
+function validateBackup(j) {
+  const errs = [];
+  const add = (m) => { if (errs.length < 12) errs.push(m); };
+  if (!j || typeof j.collections !== "object" || Array.isArray(j.collections)) return ["Mangler «collections»."];
+  Object.keys(j.collections).forEach((c) => { if (!BACKUP_COLS.includes(c)) add(`Ukjent samling «${c}».`); });
+  let total = 0;
+  for (const c of BACKUP_COLS) {
+    const list = j.collections[c] ?? [];
+    if (!Array.isArray(list)) { add(`«${c}» er ikke en liste.`); continue; }
+    total += list.length;
+    const sc = BK_SCHEMA[c], seen = new Set();
+    list.forEach((d, n) => {
+      const at = `${c} #${n + 1}`;
+      if (!d || typeof d.id !== "string" || !/^[A-Za-z0-9æøåÆØÅ_-]{1,64}$/.test(d.id)) return add(`${at}: ugyldig id.`);
+      if (seen.has(d.id)) add(`${at}: id «${d.id}» finnes to ganger.`);
+      seen.add(d.id);
+      const data = d.data;
+      if (!data || typeof data !== "object" || Array.isArray(data)) return add(`${at}: mangler data.`);
+      sc.req.forEach((k) => { if (data[k] === undefined) add(`${at}: mangler «${k}».`); });
+      Object.entries(data).forEach(([k, v]) => {
+        if (!sc.f[k]) add(`${at}: ukjent felt «${k}».`);
+        else if (!sc.f[k](v)) add(`${at}: ugyldig verdi i «${k}».`);
+      });
+    });
+  }
+  if (total > 20000) add("For mange dokumenter (maks 20000).");
+  const cats = new Set((j.collections.categories ?? []).map((d) => d?.data?.name));
+  (j.collections.items ?? []).forEach((d, n) => { const k = d?.data?.category; if (k && !cats.has(k)) add(`items #${n + 1}: kategorien «${k}» finnes ikke i filen.`); });
+  return errs;
+}
+async function restoreFromFile(file) {
+  if (file.size > 20 * 1024 * 1024) { alert("Filen er for stor."); return; }
+  let j;
+  try { j = JSON.parse(await file.text()); } catch { alert("Filen er ikke gyldig JSON."); return; }
+  if (j?.format !== "handleliste-backup" || !j.collections) { alert("Dette er ikke en sikkerhetskopi fra Handleliste."); return; }
+  const errs = validateBackup(j);
+  if (errs.length) { alert("Filen er ikke gyldig og ble ikke gjenopprettet:\n\n• " + errs.join("\n• ")); return; }
+  const all = BACKUP_COLS.flatMap((c) => (j.collections[c] || []).map((d) => ({ c, ...d })));
+  if (!confirm(`Gjenopprette ${all.length} dokumenter fra ${j.exportedAt?.slice(0, 10) || "ukjent dato"}?
+
+Eksisterende dokumenter med samme id overskrives. Dokumenter som er opprettet etter sikkerhetskopien blir liggende.`)) return;
+  for (let i = 0; i < all.length; i += 400) {
+    const b = writeBatch(db);
+    all.slice(i, i + 400).forEach((d) => b.set(doc(db, d.c, d.id), decVal(d.data)));
+    await b.commit();
+  }
+  toast(`Gjenopprettet ${all.length} dokumenter`);
+}
+
 // ---------- UI wiring ----------
+$("backupBtn").addEventListener("click", () => backupDownload().catch((e) => alert("Sikkerhetskopi feilet: " + e.message)));
+$("restoreBtn").addEventListener("click", () => $("restoreFile").click());
+$("restoreFile").addEventListener("change", (e) => {
+  const f = e.target.files[0]; e.target.value = "";
+  if (f) restoreFromFile(f).catch((err) => alert("Gjenoppretting feilet: " + err.message));
+});
+$("remaBtn").addEventListener("click", () => $("remaFile").click());
+$("remaFile").addEventListener("change", (e) => {
+  const f = e.target.files[0]; e.target.value = "";
+  if (f) importRema(f).catch((err) => alert("Import feilet: " + err.message));
+});
 $("quickForm").addEventListener("submit", (e) => {
   e.preventDefault();
   addItem($("quickText").value, $("quickCat").value);

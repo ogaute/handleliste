@@ -20,6 +20,10 @@ service cloud.firestore {
     match /meals/{id} {
       allow read, write: if allowed();
     }
+    // Products bought at Rema 1000 (imported via hent_rema.py), used as suggestions
+    match /products/{id} {
+      allow read, write: if allowed();
+    }
     // Saved dinners (name, ingredients, recipe text)
     match /recipes/{id} {
       allow read, write: if allowed();

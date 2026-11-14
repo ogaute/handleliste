@@ -38,3 +38,16 @@ Firebase-konsollen → Authentication → Sign-in method:
 - Authorized domains skal inneholde `ogaute.github.io`.
 
 Når Google-innlogging fungerer for begge kan du slå av **Email/Password** der, så passord-innlogging ikke lenger er mulig.
+
+## Varer fra Rema 1000 (forslag)
+
+Produkter du har handlet hos Rema kan brukes som forslag når du skriver en ny vare.
+Bruker Remas **private** API via `hent_rema.py` (uoffisielt, kan slutte å virke, kun egne data).
+
+1. Lag `rema_config.json` (står i `.gitignore`) med `subscription_key`, `phone` og `app_version`. Se toppen av `hent_rema.py`.
+2. `pip install certifi` (trengs på Windows for sertifikatkjeden til api.rema.no).
+3. `python hent_rema.py login` (én gang), deretter `python hent_rema.py hent` → `rema_produkter.json`.
+4. Publiser oppdaterte `firestore.rules` (ny samling `products`).
+5. I appen: `⋯` → **🛍 Importer Rema-produkter** → velg `rema_produkter.json`.
+
+Forslagene vises som nedtrekksliste i «Legg til ny vare…» og i feltene per kategori. Varer som allerede finnes i listen foreslås ikke.
