@@ -31,7 +31,7 @@ Resultatet kopieres til utklippstavlen. I appen: **Middager → 📥 Importer**,
 ## Innlogging med Google (2FA)
 
 Appen støtter «Logg inn med Google». 2FA håndteres av Google (slå det på på selve kontoen).
-Firestore-reglene sjekker fortsatt at e-postadressen er en av de to i `firestore.rules`.
+Firestore-reglene sjekker at brukerens UID er en av dem i `firestore.rules` (UID finnes i Firebase-konsollen → Authentication → Users).
 
 Firebase-konsollen → Authentication → Sign-in method:
 - **Google**: slå på, velg support-e-post, lagre.
@@ -39,8 +39,7 @@ Firebase-konsollen → Authentication → Sign-in method:
 
 Når Google-innlogging fungerer for begge kan du slå av **Email/Password** der, så passord-innlogging ikke lenger er mulig.
 
-Reglene krever `email_verified`. Google-innlogging er alltid verifisert. En e-post/passord-konto må ha bekreftet
-e-postadressen for å få tilgang, så ingen kan registrere seg selv med en av de to adressene.
+Siden reglene sjekker UID og ikke e-postadresse, kan ingen få tilgang ved å registrere en ny konto med en av adressene.
 
 ## Oppdatere Firebase-SDK
 

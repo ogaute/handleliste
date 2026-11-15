@@ -2,14 +2,14 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     // Only the household accounts may read/write the list.
-    // email_verified stops someone from signing up with one of these addresses and a password
-    // of their own: Google sign-in is verified, a self-made e-mail/password account is not.
+    // Matched on Firebase Auth UID: it belongs to one specific account and cannot be claimed
+    // by someone signing up with the same e-mail address.
     function allowed() {
       return request.auth != null
-        && request.auth.token.email_verified == true
-        && request.auth.token.email in [
-          "user1@removed",
-          "user2@removed"
+        && request.auth.uid in [
+          "t5dGR98suDbLxc6YooYVJojfnzT2",
+          "PiVu94KRDtaFzpNW9rVz04pn7063",
+          "gVoryg9A1DZpxgCzVYtV6MOmsHl1"
         ];
     }
     match /items/{id} {
