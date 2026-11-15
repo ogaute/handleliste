@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="nb">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Handleliste – lekeplass</title>
+<!-- The whole app on fake data: the Firebase SDK is swapped for in-memory stubs, so there is no login,
+     nothing is saved and the real list is never touched. Reload to start over. -->
+<script type="importmap">
+{ "imports": {
+  "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js": "./stub-app.js",
+  "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js": "./stub-auth.js",
+  "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js": "./stub-firestore.js"
+} }
+</script>
+<style>
+  #playBanner{background:#7a4b00;color:#fff;font:600 13px/1.4 system-ui,sans-serif;padding:6px 16px;text-align:center}
+</style>
+</head>
+<body>
+<script type="module" src="playground.js"></script>
+</body>
+</html>

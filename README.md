@@ -83,14 +83,40 @@ Nye filer i `js/` må legges til i `SHELL` i `sw.js` (og `CACHE` økes), ellers 
 
 Skriv aldri `await` foran en Firestore-skriving før noe annet skal skje: uten nett blir løftet aldri ferdig.
 
+## Kjøre lokalt
+
+Appen må åpnes gjennom en webserver. Å åpne `index.html` rett fra disk virker ikke, fordi nettleseren da blokkerer skriptene.
+Python har en innebygd server. Kjør dette i mappen der `index.html` ligger:
+
+```
+cd C:\Git\handleliste
+python -m http.server 8123
+```
+
+La vinduet stå åpent mens du tester, og stopp serveren med `Ctrl+C`. Deretter kan du åpne:
+
+| Adresse | Hva | Data |
+| --- | --- | --- |
+| `http://localhost:8123/tests/playground.html` | Lekeplass: hele appen, uten innlogging | Falske, ingenting lagres |
+| `http://localhost:8123/tests/?suite=a` og `?suite=b` | Automatiske tester | Falske, ingenting lagres |
+| `http://localhost:8123/` | Den ekte appen med Google-innlogging | **Ekte**: alt du endrer lagres |
+
+Får du bare en filliste, ble serveren startet i feil mappe. Ser du en gammel versjon, last på nytt med `Ctrl+Shift+R`.
+
+Den ekte appen på `localhost` krever at `http://localhost:8123` står i nettstedslisten til API-nøkkelen
+(Google Cloud Console → APIs & Services → Credentials). Bruk derfor port 8123, eller legg inn porten du velger.
+Lekeplassen og testene trenger ikke dette.
+
 ## Tester
 
 Testene kjører i nettleseren mot en Firestore-etterligning i minnet (`tests/stub-firestore.js`), uten innlogging og uten å røre
 de ekte dataene. Etterligningen oppfører seg som en frakoblet klient, så kode som venter på en skriving henger og testen feiler.
 
-```
-python -m http.server 8000
-```
+Start serveren som beskrevet over og åpne `http://localhost:8123/tests/?suite=a` og `http://localhost:8123/tests/?suite=b`.
+Resultatet vises nede til høyre, og fanetittelen blir «OK» eller «FEIL».
 
-Åpne `http://localhost:8000/tests/?suite=a` og `http://localhost:8000/tests/?suite=b`. Resultatet vises nede til høyre,
-og fanetittelen blir «OK» eller «FEIL».
+### Lekeplass
+
+`http://localhost:8123/tests/playground.html` starter hele appen på falske data (startlisten fra `seed.json` og et par
+eksempelmiddager), uten innlogging. Ingenting lagres og de ekte dataene røres ikke. Last siden på nytt for å starte forfra.
+Innlogging, sikkerhetsregler og synkronisering mellom enheter testes ikke her.

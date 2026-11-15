@@ -5,6 +5,7 @@
 import "./stub-firestore.js";
 import { updateDoc } from "./stub-firestore.js";
 import { unit } from "./unit.js";
+import { mountApp } from "./mount.js";
 
 const suite = new URLSearchParams(location.search).get("suite") === "b" ? "b" : "a";
 const S = window.__store, $ = (id) => document.getElementById(id);
@@ -35,14 +36,10 @@ const t = {
 try {
   unit(ok);
   const mod = await import(`./smoke-${suite}.js`);
-  localStorage.clear();
+  // start from default view settings (only the app's own keys: the page may share an origin with the real app)
+  ["mode", "openCats", "hideDone", "lastNewCat"].forEach((k) => localStorage.removeItem(k));
   mod.seed(S);
-  // Borrow the real page: its markup and styles, but not its scripts.
-  const page = new DOMParser().parseFromString(await (await fetch("../index.html")).text(), "text/html");
-  page.querySelectorAll("script").forEach((s) => s.remove());
-  page.querySelectorAll("style").forEach((s) => document.head.appendChild(document.adoptNode(s)));
-  document.body.insertAdjacentHTML("afterbegin", page.body.innerHTML);
-  await import("../js/app.js");
+  await mountApp();
   await wait(200);
   await mod.run(t);
 } catch (e) { errs.push("EXCEPTION " + (e.stack || e)); }
