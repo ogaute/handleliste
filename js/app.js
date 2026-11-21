@@ -8,6 +8,7 @@ import { updateSuggestions, importRema } from "./rema.js";
 import { backupDownload, restoreFromFile } from "./backup.js";
 import { editState, selected, bulkMove, bulkDelete } from "./edit-tools.js";
 import { renderApp, searchEnter } from "./list-view.js";
+import { newWeek } from "./dinners.js";
 
 $("hideDone").checked = localStorage.getItem("hideDone") === "1";
 
@@ -115,13 +116,7 @@ $("uncheckAll").addEventListener("click", () => bulk((i) => i.needed && i.checke
 $("clearNeeded").addEventListener("click", () => bulk((i) => i.needed, { needed: false, checked: false }, (n) => `Tømme hele handlelisten (${n} varer)?`));
 $("tabMeals").addEventListener("click", () => setMode("meals"));
 $("tabRecipes").addEventListener("click", () => setMode("recipes"));
-$("clearMeals").addEventListener("click", async () => {
-  $("menu").classList.add("hidden");
-  if (!meals.length || !confirm("Tømme hele ukeplanen? Ingredienser fra middagene fjernes også fra handlelisten.")) return;
-  const refs = meals.map((m) => doc(db, "meals", m.id));
-  items.filter((i) => i.mealId).forEach((i) => refs.push(doc(db, "items", i.id)));
-  await batchOver(refs, (batch, ref) => batch.delete(ref));
-});
+$("clearMeals").addEventListener("click", () => { $("menu").classList.add("hidden"); newWeek(); });
 $("seedBtn").addEventListener("click", async () => {
   if (items.length || !itemsSynced) return;
   const seed = await (await fetch("seed.json")).json();

@@ -1,5 +1,5 @@
 // App-shell cache so the page opens offline. Data offline is handled by Firestore's local cache.
-const CACHE = "handleliste-v5";
+const CACHE = "handleliste-v6";
 const SHELL = ["./", "index.html", "firebase-config.js", "seed.json", "manifest.webmanifest", "icon.svg", "icon-180.png", "icon-192.png",
   ...["app", "backup", "dinners", "drag", "edit-tools", "firebase", "list-view", "logic", "rema", "store", "ui", "util"].map((m) => `js/${m}.js`)];
 // The Firebase SDK is loaded from another origin. Keep the version in sync with js/firebase.js.

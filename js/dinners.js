@@ -2,7 +2,7 @@
 import { $, normName, esc, DAYS } from "./util.js";
 import { matchItem } from "./logic.js";
 import { setDoc, updateDoc, deleteDoc, doc, writeBatch, serverTimestamp, auth, db, itemsCol, recipesCol } from "./firebase.js";
-import { items, meals, recipes, groupNames, addItem } from "./store.js";
+import { items, meals, recipes, groupNames, addItem, batchOver } from "./store.js";
 import { openState, render, onModeChange, setMode, toast } from "./ui.js";
 
 const openRecipes = new Set();   // expanded dinners; cleared whenever you leave/enter the tab
@@ -315,6 +315,14 @@ export function renderRecipes() {
   });
 }
 
+// New week: clear the whole week plan, plus the dinner ingredients on the shopping list.
+export async function newWeek() {
+  if (!meals.length || !confirm("Starte ny uke? Hele ukeplanen tømmes, og ingredienser fra middagene fjernes også fra handlelisten.")) return;
+  const refs = meals.map((m) => doc(db, "meals", m.id));
+  items.filter((i) => i.mealId).forEach((i) => refs.push(doc(db, "items", i.id)));
+  await batchOver(refs, (batch, ref) => batch.delete(ref));
+}
+
 export function renderMeals() {
   const root = $("list");
   root.innerHTML = "";
@@ -385,4 +393,9 @@ export function renderMeals() {
     }
     root.appendChild(d);
   });
+  const nw = document.createElement("button");
+  nw.type = "button"; nw.className = "newweek"; nw.id = "newWeek"; nw.textContent = "🔄 Start ny uke";
+  nw.disabled = !meals.length;
+  nw.addEventListener("click", newWeek);
+  root.appendChild(nw);
 }

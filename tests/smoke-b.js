@@ -55,6 +55,12 @@ export async function run({ S, $, ok, wait, vals, pick }) {
   $("tabShop").click(); await wait();
   ok("dinner rows show day and dinner in shop", qa("#list li .sub").some((s) => s.textContent === "Mandag · Suppe"));
 
+  // new week clears the week plan and the dinner rows on the shopping list
+  $("tabMeals").click(); await wait();
+  ok("new week button at the bottom of Uke", $("list").lastElementChild?.id === "newWeek" && !$("newWeek").disabled);
+  $("newWeek").click(); await wait();
+  ok("new week clears plan and dinner rows", !Object.keys(S.meals).length && !vals("items").some((i) => i.mealId) && $("newWeek").disabled);
+
   // group names that give the same slug
   $("tabEdit").click(); await wait();
   const ng = q("form.newgroup"); ng.querySelector("input").value = "Kjøtt/fisk"; ng.dispatchEvent(new Event("submit", { cancelable: true })); await wait();
